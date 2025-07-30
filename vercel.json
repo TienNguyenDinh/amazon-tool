@@ -1,20 +1,15 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/**/*.js",
-      "use": "@vercel/node",
-      "config": {
-        "maxLambdaSize": "50mb",
-        "memory": 1024,
-        "maxDuration": 25
-      }
+  "functions": {
+    "api/scrape.js": {
+      "memory": 1024,
+      "maxDuration": 25
     },
-    {
-      "src": "public/**/*",
-      "use": "@vercel/static"
+    "api/health.js": {
+      "memory": 512,
+      "maxDuration": 10
     }
-  ],
+  },
   "routes": [
     {
       "src": "/api/(.*)",
@@ -33,15 +28,5 @@
   "env": {
     "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
     "PLAYWRIGHT_BROWSERS_PATH": "0"
-  },
-  "functions": {
-    "api/scrape.js": {
-      "memory": 1024,
-      "maxDuration": 25
-    },
-    "api/health.js": {
-      "memory": 512,
-      "maxDuration": 10
-    }
   }
 }
