@@ -1,12 +1,5 @@
-const express = require('express');
 const { chromium } = require('playwright');
 const ExcelJS = require('exceljs');
-const cors = require('cors');
-const path = require('path');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const IS_VERCEL = process.env.VERCEL === '1';
 
 // Configuration constants
 const SCRAPING_CONFIG = {
@@ -28,11 +21,6 @@ const EXCEL_CONFIG = {
     'Product URL',
   ],
 };
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Helper function to add random delay
 const randomDelay = (min = 1000, max = 3000) => {
@@ -220,8 +208,25 @@ const generateExcelFile = async (productData) => {
   }
 };
 
-// API Routes
-app.post('/scrape', async (req, res) => {
+// Vercel API handler
+module.exports = async (req, res) => {
+  // Enable CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({
+      error: 'Method not allowed',
+      message: 'Only POST requests are supported',
+    });
+  }
+
   try {
     const { url } = req.body;
 
@@ -269,20 +274,4 @@ app.post('/scrape', async (req, res) => {
       message: error.message,
     });
   }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// Start server (only if not running on Vercel)
-if (!IS_VERCEL) {
-  app.listen(PORT, () => {
-    console.log(`Amazon Scraper Server running on port ${PORT}`);
-    console.log(`Frontend available at: http://localhost:${PORT}`);
-    console.log(`API endpoint: http://localhost:${PORT}/scrape`);
-  });
-}
-
-module.exports = app;
+};

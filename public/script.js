@@ -9,7 +9,7 @@ const progressBar = document.getElementById('progress-bar');
 // Configuration constants
 const API_CONFIG = {
   baseUrl: window.location.origin,
-  scrapeEndpoint: '/scrape',
+  scrapeEndpoint: '/api/scrape',
   timeout: 60000, // 60 seconds
 };
 

@@ -6,7 +6,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "echo 'No build process required for this Node.js app'",
+    "vercel-build": "npx playwright install chromium"
   },
   "keywords": [
     "amazon",
@@ -23,5 +25,8 @@
     "playwright": "^1.40.0",
     "exceljs": "^4.4.0",
     "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
