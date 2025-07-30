@@ -6,7 +6,8 @@
       "use": "@vercel/node",
       "config": {
         "maxLambdaSize": "50mb",
-        "memory": 1024
+        "memory": 1024,
+        "maxDuration": 25
       }
     },
     {
@@ -17,7 +18,12 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "dest": "/api/$1",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type"
+      }
     },
     {
       "src": "/(.*)",
@@ -25,6 +31,17 @@
     }
   ],
   "env": {
-    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1"
+    "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1",
+    "PLAYWRIGHT_BROWSERS_PATH": "0"
+  },
+  "functions": {
+    "api/scrape.js": {
+      "memory": 1024,
+      "maxDuration": 25
+    },
+    "api/health.js": {
+      "memory": 512,
+      "maxDuration": 10
+    }
   }
 }

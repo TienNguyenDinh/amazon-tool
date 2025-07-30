@@ -1,10 +1,10 @@
 const { chromium } = require('playwright');
 const ExcelJS = require('exceljs');
 
-// Configuration constants
+// Configuration constants optimized for Vercel serverless
 const SCRAPING_CONFIG = {
-  timeout: 30000,
-  waitTime: 2000,
+  timeout: 25000, // Reduced from 30000 for Vercel limits
+  waitTime: 1500, // Reduced from 2000
   userAgent:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 };
@@ -22,8 +22,29 @@ const EXCEL_CONFIG = {
   ],
 };
 
+const VERCEL_BROWSER_CONFIG = {
+  // Optimized browser args for Vercel serverless environment
+  args: [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--single-process',
+    '--disable-gpu',
+    '--disable-web-security',
+    '--disable-features=VizDisplayCompositor',
+    '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-background-networking',
+    '--memory-pressure-off',
+  ],
+};
+
 // Helper function to add random delay
-const randomDelay = (min = 1000, max = 3000) => {
+const randomDelay = (min = 800, max = 2000) => {
   const delay = Math.floor(Math.random() * (max - min + 1)) + min;
   return new Promise((resolve) => setTimeout(resolve, delay));
 };
@@ -47,7 +68,7 @@ const safeTextExtract = async (page, selectors, defaultValue = 'N/A') => {
   return defaultValue;
 };
 
-// Main scraping function
+// Main scraping function optimized for serverless
 const scrapeAmazonProduct = async (url) => {
   let browser;
   try {
@@ -55,27 +76,20 @@ const scrapeAmazonProduct = async (url) => {
 
     // Validate URL
     if (!url || !url.includes('amazon.')) {
-      throw new Error('Invalid Amazon URL provided');
+      throw new Error(
+        'Invalid Amazon URL provided - URL must contain "amazon."'
+      );
     }
 
-    // Launch browser with serverless-friendly configuration
+    // Launch browser with serverless-optimized configuration
     browser = await chromium.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-      ],
+      args: VERCEL_BROWSER_CONFIG.args,
     });
 
     const context = await browser.newContext({
       userAgent: SCRAPING_CONFIG.userAgent,
-      viewport: { width: 1920, height: 1080 },
+      viewport: { width: 1280, height: 720 }, // Reduced from 1920x1080
     });
 
     const page = await context.newPage();
@@ -88,7 +102,7 @@ const scrapeAmazonProduct = async (url) => {
         'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
     });
 
-    // Navigate to page with timeout
+    // Navigate to page with reduced timeout for Vercel limits
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: SCRAPING_CONFIG.timeout,
@@ -100,7 +114,9 @@ const scrapeAmazonProduct = async (url) => {
     // Check for CAPTCHA or blocking
     const captchaExists = (await page.$('form[action*="captcha"]')) !== null;
     if (captchaExists) {
-      throw new Error('CAPTCHA detected. Please try again later.');
+      throw new Error(
+        'CAPTCHA detected - Amazon has detected automated access. Please try again later.'
+      );
     }
 
     // Wait for page to load completely
@@ -158,10 +174,33 @@ const scrapeAmazonProduct = async (url) => {
     return productData;
   } catch (error) {
     console.error('Scraping error:', error.message);
+
+    // Enhanced error messages for common deployment issues
+    if (
+      error.message.includes('Target closed') ||
+      error.message.includes('Navigation timeout')
+    ) {
+      throw new Error(
+        'Page loading timeout - The Amazon page took too long to load. Please try again.'
+      );
+    } else if (error.message.includes('net::ERR_NAME_NOT_RESOLVED')) {
+      throw new Error(
+        'Network error - Could not connect to Amazon. Please check the URL and try again.'
+      );
+    } else if (error.message.includes('chromium')) {
+      throw new Error(
+        'Browser initialization failed - There was an issue starting the web scraper. Please try again.'
+      );
+    }
+
     throw error;
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error('Error closing browser:', closeError.message);
+      }
     }
   }
 };
@@ -208,7 +247,7 @@ const generateExcelFile = async (productData) => {
   }
 };
 
-// Vercel API handler
+// Vercel API handler with enhanced error handling
 module.exports = async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -223,7 +262,7 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({
       error: 'Method not allowed',
-      message: 'Only POST requests are supported',
+      message: 'Only POST requests are supported for scraping endpoint',
     });
   }
 
@@ -233,7 +272,8 @@ module.exports = async (req, res) => {
     if (!url) {
       return res.status(400).json({
         error: 'URL is required',
-        message: 'Please provide a valid Amazon product URL',
+        message:
+          'Please provide a valid Amazon product URL in the request body',
       });
     }
 
@@ -241,6 +281,13 @@ module.exports = async (req, res) => {
 
     // Scrape product data
     const productData = await scrapeAmazonProduct(url);
+
+    // Validate that we got meaningful data
+    if (!productData.title || productData.title === 'N/A') {
+      throw new Error(
+        'Failed to extract product data - The page may not be a valid Amazon product page'
+      );
+    }
 
     // Generate Excel file
     const excelBuffer = await generateExcelFile(productData);
@@ -262,16 +309,45 @@ module.exports = async (req, res) => {
   } catch (error) {
     console.error('API error:', error.message);
 
-    // Send appropriate error response
-    const statusCode = error.message.includes('Invalid Amazon URL')
-      ? 400
-      : error.message.includes('CAPTCHA')
-      ? 429
-      : 500;
+    // Enhanced error handling for specific deployment issues
+    let statusCode = 500;
+    let errorMessage = error.message;
+
+    if (error.message.includes('Invalid Amazon URL')) {
+      statusCode = 400;
+    } else if (error.message.includes('CAPTCHA')) {
+      statusCode = 429;
+      errorMessage =
+        'Amazon has detected automated access. Please wait before trying again.';
+    } else if (
+      error.message.includes('timeout') ||
+      error.message.includes('Navigation timeout')
+    ) {
+      statusCode = 408;
+      errorMessage =
+        'Request timeout - The page took too long to load. Please try again.';
+    } else if (error.message.includes('Browser initialization failed')) {
+      statusCode = 503;
+      errorMessage =
+        'Service temporarily unavailable - Browser could not be initialized. Please try again.';
+    } else if (error.message.includes('Failed to extract product data')) {
+      statusCode = 422;
+      errorMessage =
+        'Could not extract product information - Please verify this is a valid Amazon product page.';
+    } else if (error.message.includes('Network error')) {
+      statusCode = 502;
+      errorMessage =
+        'Network error - Could not connect to Amazon. Please check the URL and try again.';
+    } else {
+      // Generic server error
+      errorMessage =
+        'An unexpected error occurred while processing your request. Please try again.';
+    }
 
     res.status(statusCode).json({
       error: 'Scraping failed',
-      message: error.message,
+      message: errorMessage,
+      statusCode: statusCode,
     });
   }
 };

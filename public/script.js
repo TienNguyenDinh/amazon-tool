@@ -6,11 +6,11 @@ const loadingSpinner = document.getElementById('loading-spinner');
 const statusMessage = document.getElementById('status-message');
 const progressBar = document.getElementById('progress-bar');
 
-// Configuration constants
+// Configuration constants optimized for Vercel deployment
 const API_CONFIG = {
   baseUrl: window.location.origin,
   scrapeEndpoint: '/api/scrape',
-  timeout: 60000, // 60 seconds
+  timeout: 45000, // Increased from 60000 but kept under Vercel's limits
 };
 
 const STATUS_MESSAGES = {
@@ -20,9 +20,15 @@ const STATUS_MESSAGES = {
   error: 'Error occurred while scraping',
   invalidUrl: 'Please enter a valid Amazon product URL',
   networkError: 'Network error. Please check your connection and try again.',
-  timeout: 'Request timed out. The page may be taking too long to load.',
+  timeout:
+    'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
   captcha: 'Amazon detected automated access. Please try again later.',
   serverError: 'Server error occurred. Please try again.',
+  serviceUnavailable:
+    'Service temporarily unavailable. Please try again in a moment.',
+  browserError: 'Browser initialization failed. Please try again.',
+  extractionError:
+    'Could not extract product data. Please verify this is a valid Amazon product page.',
 };
 
 // Utility functions
@@ -106,11 +112,23 @@ const handleApiError = (error, response = null) => {
       case 400:
         showStatus(STATUS_MESSAGES.invalidUrl, 'error');
         break;
+      case 408:
+        showStatus(STATUS_MESSAGES.timeout, 'warning');
+        break;
+      case 422:
+        showStatus(STATUS_MESSAGES.extractionError, 'error');
+        break;
       case 429:
         showStatus(STATUS_MESSAGES.captcha, 'warning');
         break;
       case 500:
         showStatus(STATUS_MESSAGES.serverError, 'error');
+        break;
+      case 502:
+        showStatus(STATUS_MESSAGES.networkError, 'error');
+        break;
+      case 503:
+        showStatus(STATUS_MESSAGES.serviceUnavailable, 'warning');
         break;
       default:
         showStatus(`${STATUS_MESSAGES.error}: ${response.status}`, 'error');
