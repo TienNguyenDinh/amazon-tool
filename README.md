@@ -4,12 +4,13 @@ A full-stack web application that allows users to input an Amazon product URL, s
 
 ## Features
 
-- 🔍 **Web Scraping**: Uses Playwright for reliable browser automation
+- 🔍 **Web Scraping**: Uses HTTP requests with intelligent HTML parsing for serverless compatibility
 - 📊 **Excel Export**: Generates formatted Excel files with product data
-- 🛡️ **Anti-Blocking**: Implements human-like delays and realistic headers
+- 🛡️ **Anti-Blocking**: Implements realistic headers and request patterns
 - 🎨 **Modern UI**: Clean, responsive web interface
 - ⚡ **Real-time Feedback**: Progress indicators and status updates
 - 🔧 **Error Handling**: Comprehensive error handling with user-friendly messages
+- ☁️ **Serverless Ready**: Optimized for deployment on Vercel and other serverless platforms
 
 ## Data Extracted
 
@@ -25,7 +26,7 @@ A full-stack web application that allows users to input an Amazon product URL, s
 ### Backend
 - **Node.js** - Runtime environment
 - **Express.js** - Web framework
-- **Playwright** - Browser automation
+- **HTTP Requests** - Native Node.js HTTP client for web scraping
 - **ExcelJS** - Excel file generation
 - **CORS** - Cross-origin resource sharing
 
@@ -38,9 +39,9 @@ A full-stack web application that allows users to input an Amazon product URL, s
 
 Before running this application, make sure you have:
 
-- **Node.js** (version 16 or higher)
+- **Node.js** (version 18 or higher)
 - **npm** (comes with Node.js)
-- **Internet connection** (for downloading browser dependencies)
+- **Internet connection** (for making requests to Amazon)
 
 ## Installation
 
@@ -54,12 +55,7 @@ Before running this application, make sure you have:
    npm install
    ```
 
-3. **Install Playwright browsers:**
-   ```bash
-   npx playwright install
-   ```
-
-   This will download the necessary browser binaries (Chromium, Firefox, WebKit). For this project, we only use Chromium.
+   That's it! No additional browser installation needed.
 
 ## Usage
 
@@ -89,7 +85,7 @@ Before running this application, make sure you have:
 
 3. **Click "Scrape Product"** to start the extraction process
 
-4. **Wait for the process to complete** (10-30 seconds depending on page complexity)
+4. **Wait for the process to complete** (5-15 seconds typically)
 
 5. **Download will start automatically** once scraping is complete
 
@@ -98,7 +94,7 @@ Before running this application, make sure you have:
 You can also use the API directly:
 
 ```bash
-curl -X POST http://localhost:3000/scrape \
+curl -X POST http://localhost:3000/api/scrape \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.amazon.com/your-product-url"}' \
   --output product_data.xlsx
@@ -110,7 +106,11 @@ curl -X POST http://localhost:3000/scrape \
 amazon-tool/
 ├── server.js              # Main server file
 ├── package.json           # Dependencies and scripts
+├── vercel.json            # Vercel deployment configuration
 ├── README.md             # This file
+├── api/                  # API endpoints
+│   ├── scrape.js         # Main scraping logic
+│   └── health.js         # Health check endpoint
 └── public/               # Frontend files
     ├── index.html        # Main HTML page
     ├── style.css         # CSS styles
@@ -127,76 +127,94 @@ You can customize the server behavior using environment variables:
 PORT=3000                 # Server port (default: 3000)
 ```
 
-### Server Configuration
+### Scraping Configuration
 
-Edit the constants in `server.js` to modify:
+Edit the constants in `api/scrape.js` to modify:
 
 - **Timeout settings**: Adjust `SCRAPING_CONFIG.timeout`
 - **Wait times**: Modify `SCRAPING_CONFIG.waitTime`
 - **User agent**: Update `SCRAPING_CONFIG.userAgent`
+- **Request headers**: Customize `SCRAPING_CONFIG.headers`
+
+## Deployment
+
+### Vercel Deployment (Recommended)
+
+This application is optimized for Vercel deployment:
+
+1. **Push your code to GitHub**
+
+2. **Connect to Vercel:**
+   - Import your GitHub repository
+   - Vercel will automatically detect the configuration
+
+3. **Deploy:**
+   - No additional configuration needed
+   - The app will work in serverless mode automatically
+
+### Other Platforms
+
+The application can be deployed on any Node.js hosting platform that supports:
+- Node.js 18+
+- HTTP requests (no browser automation dependencies)
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"CAPTCHA detected" error**
-   - Amazon has detected automated access
-   - Wait a few minutes before trying again
-   - Consider using a different network or VPN
-
-2. **"Invalid Amazon URL" error**
+1. **"Invalid Amazon URL" error**
    - Ensure the URL contains "amazon." in the domain
    - Use direct product page URLs (not search results)
 
-3. **Timeout errors**
+2. **"Network connection error"**
    - Check your internet connection
+   - Amazon may be temporarily blocking requests
+   - Try again after a few minutes
+
+3. **"Page loading timeout"**
+   - Amazon may be experiencing high load
    - Try with a different Amazon product URL
-   - Some pages may load slowly
+   - Check if the product page loads in your browser
 
 4. **Missing data fields**
    - Some products may not have all data fields
    - Missing fields will show "N/A" in the Excel file
+   - Amazon's page structure may vary for different product types
 
-### Browser Installation Issues
+5. **"HTTP 4xx/5xx" errors**
+   - The product may not exist or be temporarily unavailable
+   - Try with a different product URL
+   - Check if the URL is accessible in your browser
 
-If Playwright browser installation fails:
+### Production Issues
 
-```bash
-# For Linux users who might need additional dependencies
-npx playwright install-deps
+If the app works locally but fails in production:
 
-# For specific browser only
-npx playwright install chromium
-```
-
-### Port Already in Use
-
-If port 3000 is busy:
-
-```bash
-PORT=3001 npm start
-```
+1. **Check deployment logs** for specific error messages
+2. **Verify environment variables** are set correctly
+3. **Ensure serverless function timeout** is sufficient (25 seconds configured)
+4. **Test with different Amazon URLs** to rule out specific product issues
 
 ## Development
 
 ### Adding New Data Fields
 
-1. Add new selectors to the `productData` object in `server.js`
+1. Add new patterns to the extraction logic in `api/scrape.js`
 2. Update the `EXCEL_CONFIG.headers` array
 3. Add the new field to the Excel row generation
 
 ### Modifying Scraping Logic
 
-- Edit the `scrapeAmazonProduct` function in `server.js`
-- Add new selectors to the `safeTextExtract` calls
+- Edit the `extractProductData` function in `api/scrape.js`
+- Add new regex patterns to extract additional data
 - Test with various Amazon product pages
 
 ## Security Considerations
 
-- This tool respects Amazon's servers with delays between requests
-- Uses realistic browser headers to minimize detection
-- Handles CAPTCHA detection gracefully
+- This tool uses HTTP requests with realistic headers to minimize detection
+- Handles various Amazon response codes gracefully
 - No user data is stored or transmitted to third parties
+- Uses appropriate request timeouts to avoid hanging requests
 
 ## Legal Notice
 
@@ -217,8 +235,8 @@ If you encounter issues:
 
 1. Check the troubleshooting section above
 2. Ensure all dependencies are correctly installed
-3. Verify your Node.js version is 16 or higher
-4. Check the console for detailed error messages
+3. Verify your Node.js version is 18 or higher
+4. Check the console/logs for detailed error messages
 
 ## Contributing
 

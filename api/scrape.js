@@ -1,7 +1,9 @@
-const { chromium } = require('playwright');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 const ExcelJS = require('exceljs');
 
-// Configuration constants - simplified and focused
+// Configuration constants
 const SCRAPING_CONFIG = {
   timeout: 30000,
   waitTime: 1000,
@@ -9,6 +11,18 @@ const SCRAPING_CONFIG = {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   maxRetryAttempts: 2,
   retryDelay: 2000,
+  headers: {
+    Accept:
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    Connection: 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Cache-Control': 'max-age=0',
+  },
 };
 
 const EXCEL_CONFIG = {
@@ -24,49 +38,111 @@ const EXCEL_CONFIG = {
   ],
 };
 
-// Simplified browser configuration
-const BROWSER_CONFIG = {
-  args: [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--disable-extensions',
-    '--no-first-run',
-    '--disable-default-apps',
-  ],
-  headless: true,
-  timeout: 30000,
-};
-
 // Simple logging function
 const log = (message, level = 'INFO') => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${level}] ${message}`);
 };
 
-// Simplified browser launch function
-const launchBrowser = async () => {
-  try {
-    log('Attempting browser launch for local development...');
+// HTTP request helper function
+const makeHttpRequest = (url, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const isHttps = urlObj.protocol === 'https:';
+    const requestModule = isHttps ? https : http;
 
-    const browser = await chromium.launch(BROWSER_CONFIG);
+    const requestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: {
+        'User-Agent': SCRAPING_CONFIG.userAgent,
+        ...SCRAPING_CONFIG.headers,
+        ...options.headers,
+      },
+      timeout: SCRAPING_CONFIG.timeout,
+    };
 
-    if (!browser || !browser.isConnected()) {
-      throw new Error('Browser failed to launch properly');
-    }
+    const req = requestModule.request(requestOptions, (res) => {
+      let data = '';
 
-    log('Browser launched successfully');
-    return browser;
-  } catch (error) {
-    log(`Browser launch failed: ${error.message}`, 'ERROR');
-    throw new Error(`Browser initialization failed: ${error.message}`);
-  }
+      // Handle redirects
+      if (
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        const redirectUrl = new URL(res.headers.location, url).toString();
+        log(`Following redirect to: ${redirectUrl}`);
+        return makeHttpRequest(redirectUrl, options)
+          .then(resolve)
+          .catch(reject);
+      }
+
+      if (res.statusCode !== 200) {
+        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        return;
+      }
+
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      res.on('end', () => {
+        resolve(data);
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`Request failed: ${error.message}`));
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    req.end();
+  });
 };
 
-// Extract product data with proper error handling
-const extractProductData = async (page, url) => {
-  log('Starting data extraction');
+// Simple HTML parser functions
+const extractTextBetween = (html, startPattern, endPattern) => {
+  const startIndex = html.indexOf(startPattern);
+  if (startIndex === -1) return null;
+
+  const contentStart = startIndex + startPattern.length;
+  const endIndex = html.indexOf(endPattern, contentStart);
+  if (endIndex === -1) return null;
+
+  return html.substring(contentStart, endIndex).trim();
+};
+
+const extractTextFromTag = (html, tagPattern) => {
+  const match = html.match(tagPattern);
+  return match ? match[1].trim() : null;
+};
+
+const decodeHtmlEntities = (text) => {
+  const entities = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#x27;': "'",
+    '&#x2F;': '/',
+    '&#39;': "'",
+    '&nbsp;': ' ',
+  };
+
+  return text.replace(/&[#\w]+;/g, (entity) => entities[entity] || entity);
+};
+
+// Extract product data from HTML
+const extractProductData = (html, url) => {
+  log('Starting data extraction from HTML');
 
   const productData = {
     title: 'N/A',
@@ -78,79 +154,87 @@ const extractProductData = async (page, url) => {
   };
 
   try {
-    // Wait for page to be ready
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    // Extract title - multiple patterns to try
+    const titlePatterns = [
+      /<span[^>]*id="productTitle"[^>]*>([^<]+)<\/span>/i,
+      /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+      /<title>([^<]+)<\/title>/i,
+    ];
 
-    // Extract title
-    try {
-      const titleElement = await page.waitForSelector('#productTitle', {
-        timeout: 5000,
-      });
-      if (titleElement) {
-        const titleText = await titleElement.textContent();
-        if (titleText) {
-          productData.title = titleText.trim();
+    for (const pattern of titlePatterns) {
+      const titleMatch = html.match(pattern);
+      if (titleMatch) {
+        const title = decodeHtmlEntities(titleMatch[1])
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (title && !title.toLowerCase().includes('amazon.com')) {
+          productData.title = title;
+          break;
         }
       }
-    } catch (titleError) {
-      log(`Title extraction failed: ${titleError.message}`);
     }
 
-    // Extract price
-    try {
-      const priceSelectors = [
-        '.a-price-whole',
-        '.a-offscreen',
-        '.a-price .a-offscreen',
-      ];
-      for (const selector of priceSelectors) {
-        try {
-          const priceElement = await page.$(selector);
-          if (priceElement) {
-            const priceText = await priceElement.textContent();
-            if (priceText && priceText.trim() !== '') {
-              productData.price = priceText.trim();
-              break;
-            }
-          }
-        } catch (priceError) {
-          continue;
+    // Extract price - multiple patterns
+    const pricePatterns = [
+      /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<\/span>/i,
+      /<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>\$?([^<]+)<\/span>/i,
+      /<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?([^<]+)<\/span>/i,
+      /Price[^:]*:\s*\$?([0-9,]+\.?[0-9]*)/i,
+    ];
+
+    for (const pattern of pricePatterns) {
+      const priceMatch = html.match(pattern);
+      if (priceMatch) {
+        const priceText = priceMatch[1].replace(/[^\d.,]/g, '').trim();
+        if (priceText && priceText !== '') {
+          productData.price = '$' + priceText;
+          break;
         }
       }
-    } catch (priceError) {
-      log(`Price extraction failed: ${priceError.message}`);
     }
 
-    // Extract ASIN from URL
+    // Extract ASIN from URL or HTML
     const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
     if (asinMatch) {
       productData.asin = asinMatch[1];
+    } else {
+      // Try to find ASIN in HTML
+      const asinHtmlMatch =
+        html.match(/['"](B[A-Z0-9]{9})['"]/) ||
+        html.match(/data-asin=["']([A-Z0-9]{10})["']/);
+      if (asinHtmlMatch) {
+        productData.asin = asinHtmlMatch[1];
+      }
     }
 
     // Extract rating
-    try {
-      const ratingElement = await page.$('.a-icon-alt');
-      if (ratingElement) {
-        const ratingText = await ratingElement.textContent();
-        if (ratingText && ratingText.includes('out of')) {
-          productData.rating = ratingText.trim();
-        }
+    const ratingPatterns = [
+      /([0-9.]+)\s+out\s+of\s+5\s+stars/i,
+      /rating[^>]*>([0-9.]+)\s*<\/[^>]*>/i,
+      /stars[^>]*>([0-9.]+)/i,
+    ];
+
+    for (const pattern of ratingPatterns) {
+      const ratingMatch = html.match(pattern);
+      if (ratingMatch) {
+        productData.rating = ratingMatch[1] + ' out of 5 stars';
+        break;
       }
-    } catch (ratingError) {
-      log(`Rating extraction failed: ${ratingError.message}`);
     }
 
     // Extract review count
-    try {
-      const reviewElement = await page.$('#acrCustomerReviewText');
-      if (reviewElement) {
-        const reviewText = await reviewElement.textContent();
-        if (reviewText) {
-          productData.reviewCount = reviewText.trim();
-        }
+    const reviewPatterns = [
+      /([0-9,]+)\s+ratings?/i,
+      /([0-9,]+)\s+reviews?/i,
+      /([0-9,]+)\s+customer\s+reviews?/i,
+    ];
+
+    for (const pattern of reviewPatterns) {
+      const reviewMatch = html.match(pattern);
+      if (reviewMatch) {
+        productData.reviewCount = reviewMatch[1] + ' ratings';
+        break;
       }
-    } catch (reviewError) {
-      log(`Review count extraction failed: ${reviewError.message}`);
     }
 
     log(`Successfully extracted data: ${JSON.stringify(productData)}`);
@@ -171,12 +255,8 @@ const extractProductData = async (page, url) => {
   }
 };
 
-// Main scraping function - simplified and robust
+// Main scraping function
 const scrapeAmazonProduct = async (url) => {
-  let browser = null;
-  let context = null;
-  let page = null;
-
   try {
     log(`Starting scrape session for: ${url}`);
 
@@ -189,31 +269,18 @@ const scrapeAmazonProduct = async (url) => {
     const cleanUrl = url.split('?')[0];
     log(`Using clean URL: ${cleanUrl}`);
 
-    // Launch browser
-    browser = await launchBrowser();
+    // Make HTTP request to get the page
+    log('Making HTTP request to Amazon...');
+    const html = await makeHttpRequest(cleanUrl);
 
-    // Create context with minimal settings
-    context = await browser.newContext({
-      userAgent: SCRAPING_CONFIG.userAgent,
-      viewport: { width: 1280, height: 720 },
-      ignoreHTTPSErrors: true,
-    });
+    if (!html || html.length < 1000) {
+      throw new Error('Received empty or incomplete response from Amazon');
+    }
 
-    // Create page
-    page = await context.newPage();
+    log(`Received HTML response (${html.length} characters)`);
 
-    // Navigate to the URL
-    log(`Navigating to: ${cleanUrl}`);
-    await page.goto(cleanUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: SCRAPING_CONFIG.timeout,
-    });
-
-    // Wait a moment for dynamic content
-    await page.waitForTimeout(SCRAPING_CONFIG.waitTime);
-
-    // Extract product data
-    const productData = await extractProductData(page, url);
+    // Extract product data from HTML
+    const productData = extractProductData(html, url);
 
     log('Scraping completed successfully');
     return productData;
@@ -222,65 +289,32 @@ const scrapeAmazonProduct = async (url) => {
 
     // Classify errors for better user feedback
     if (
-      error.message.includes('net::ERR') ||
-      error.message.includes('Network')
+      error.message.includes('Request failed') ||
+      error.message.includes('ENOTFOUND') ||
+      error.message.includes('ECONNREFUSED')
     ) {
       throw new Error(
         'Network connection error. Please check your internet connection and try again.'
       );
     } else if (
       error.message.includes('timeout') ||
-      error.message.includes('Navigation timeout')
+      error.message.includes('Request timeout')
     ) {
       throw new Error(
         'Page loading timeout. Amazon may be experiencing issues or blocking requests.'
       );
-    } else if (
-      error.message.includes('Target closed') ||
-      error.message.includes('browser has been closed')
-    ) {
-      throw new Error('Browser connection was interrupted. Please try again.');
     } else if (error.message.includes('Invalid Amazon URL')) {
       throw new Error('Please provide a valid Amazon product URL.');
-    } else if (error.message.includes('Browser initialization failed')) {
+    } else if (
+      error.message.includes('HTTP 4') ||
+      error.message.includes('HTTP 5')
+    ) {
       throw new Error(
-        'Could not start browser. Please ensure Playwright is properly installed.'
+        'Amazon returned an error response. The product may not exist or be temporarily unavailable.'
       );
     }
 
     throw error;
-  } finally {
-    // Clean up resources
-    log('Starting cleanup process');
-
-    try {
-      if (page && !page.isClosed()) {
-        await page.close();
-        log('Page closed');
-      }
-    } catch (pageError) {
-      log(`Page cleanup error: ${pageError.message}`, 'ERROR');
-    }
-
-    try {
-      if (context) {
-        await context.close();
-        log('Context closed');
-      }
-    } catch (contextError) {
-      log(`Context cleanup error: ${contextError.message}`, 'ERROR');
-    }
-
-    try {
-      if (browser && browser.isConnected()) {
-        await browser.close();
-        log('Browser closed');
-      }
-    } catch (browserError) {
-      log(`Browser cleanup error: ${browserError.message}`, 'ERROR');
-    }
-
-    log('Cleanup completed');
   }
 };
 
@@ -398,10 +432,7 @@ module.exports = async (req, res) => {
       statusCode = 408;
     } else if (error.message.includes('Network connection error')) {
       statusCode = 502;
-    } else if (
-      error.message.includes('Browser connection was interrupted') ||
-      error.message.includes('Could not start browser')
-    ) {
+    } else if (error.message.includes('Amazon returned an error response')) {
       statusCode = 503;
     }
 
