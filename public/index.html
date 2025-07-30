@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amazon Product Scraper</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>Amazon Product Scraper</h1>
+        <p>Extract product data from Amazon and download as Excel file</p>
+      </header>
+
+      <main>
+        <div class="input-section">
+          <label for="url-input">Amazon Product URL:</label>
+          <input
+            type="url"
+            id="url-input"
+            placeholder="https://www.amazon.com/product-name/dp/ASIN"
+            required
+          />
+          <button id="scrape-btn" type="button">
+            <span id="btn-text">Scrape Product</span>
+            <span id="loading-spinner" class="spinner hidden"></span>
+          </button>
+        </div>
+
+        <div class="status-section">
+          <div id="status-message" class="status-message"></div>
+          <div id="progress-bar" class="progress-bar hidden">
+            <div class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="info-section">
+          <h3>How to use:</h3>
+          <ol>
+            <li>Copy an Amazon product URL from your browser</li>
+            <li>Paste it into the input field above</li>
+            <li>Click "Scrape Product" to extract data</li>
+            <li>The Excel file will automatically download</li>
+          </ol>
+
+          <div class="warning">
+            <strong>Note:</strong> This tool respects Amazon's servers by adding
+            delays between requests. Scraping may take 10-30 seconds depending
+            on the page complexity.
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>Built with Node.js, Express, Playwright, and ExcelJS</p>
+      </footer>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
