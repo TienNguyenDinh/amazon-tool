@@ -17,13 +17,63 @@
 
       <main>
         <div class="input-section">
-          <label for="url-input">Amazon Product URL:</label>
-          <input
-            type="url"
-            id="url-input"
-            placeholder="https://www.amazon.com/product-name/dp/ASIN"
-            required
-          />
+          <!-- Input Mode Toggle -->
+          <div class="input-mode-toggle">
+            <label class="toggle-label">Input Mode:</label>
+            <div class="radio-group">
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="input-mode"
+                  value="single"
+                  id="single-mode"
+                  checked
+                />
+                <span class="radio-text">Single Product URL</span>
+              </label>
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="input-mode"
+                  value="multiple"
+                  id="multiple-mode"
+                />
+                <span class="radio-text">Multiple Product URLs</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Single URL Input -->
+          <div id="single-input-container" class="input-container">
+            <label for="url-input">Amazon Product URL:</label>
+            <input
+              type="url"
+              id="url-input"
+              placeholder="https://www.amazon.com/product-name/dp/ASIN"
+              required
+            />
+          </div>
+
+          <!-- Multiple URLs Input -->
+          <div id="multiple-input-container" class="input-container hidden">
+            <label for="urls-textarea"
+              >Amazon Product URLs (one per line):</label
+            >
+            <textarea
+              id="urls-textarea"
+              placeholder="https://www.amazon.com/product1/dp/ASIN1
+https://www.amazon.com/product2/dp/ASIN2
+https://www.amazon.com/product3/dp/ASIN3"
+              rows="6"
+            ></textarea>
+            <div class="input-helper">
+              <small
+                >Enter one Amazon product URL per line. Up to 10 URLs
+                supported.</small
+              >
+            </div>
+          </div>
+
           <button id="scrape-btn" type="button">
             <span id="btn-text">Scrape Product</span>
             <span id="loading-spinner" class="spinner hidden"></span>
@@ -61,16 +111,33 @@
         <div class="info-section">
           <h3>How to use:</h3>
           <ol>
-            <li>Copy an Amazon product URL from your browser</li>
-            <li>Paste it into the input field above</li>
-            <li>Click "Scrape Product" to extract data</li>
+            <li>
+              <strong>Single Product Mode:</strong>
+              <ul>
+                <li>Select "Single Product URL" mode</li>
+                <li>Copy an Amazon product URL from your browser</li>
+                <li>Paste it into the input field</li>
+                <li>Click "Scrape Product" to extract data</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Multiple Products Mode:</strong>
+              <ul>
+                <li>Select "Multiple Product URLs" mode</li>
+                <li>Enter one Amazon product URL per line in the text area</li>
+                <li>You can enter up to 10 URLs at once</li>
+                <li>Click "Scrape Products" to extract data from all URLs</li>
+                <li>Use Ctrl+Enter as a shortcut to start scraping</li>
+              </ul>
+            </li>
             <li>View the extracted data in the professional table below</li>
           </ol>
 
           <div class="warning">
             <strong>Note:</strong> This tool respects Amazon's servers by adding
-            delays between requests. Scraping may take 10-30 seconds depending
-            on the page complexity.
+            delays between requests. Scraping may take 10-30 seconds per product
+            depending on the page complexity. Multiple products are processed
+            sequentially.
           </div>
         </div>
       </main>

@@ -1,5 +1,12 @@
 // DOM elements
 const urlInput = document.getElementById('url-input');
+const urlsTextarea = document.getElementById('urls-textarea');
+const singleModeRadio = document.getElementById('single-mode');
+const multipleModeRadio = document.getElementById('multiple-mode');
+const singleInputContainer = document.getElementById('single-input-container');
+const multipleInputContainer = document.getElementById(
+  'multiple-input-container'
+);
 const scrapeBtn = document.getElementById('scrape-btn');
 const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
@@ -8,6 +15,17 @@ const progressBar = document.getElementById('progress-bar');
 const progressFill = document.querySelector('.progress-fill');
 const resultsSection = document.getElementById('results-section');
 const resultsTBody = document.getElementById('results-tbody');
+
+// Configuration constants
+const INPUT_MODE = {
+  SINGLE: 'single',
+  MULTIPLE: 'multiple',
+};
+
+const URL_LIMITS = {
+  MAX_MULTIPLE_URLS: 10,
+  MIN_MULTIPLE_URLS: 1,
+};
 
 // Progress bar constants to avoid magic numbers
 const PROGRESS_CONFIG = {
@@ -45,10 +63,16 @@ const PROGRESS_TIMING = {
 
 const STATUS_MESSAGES = {
   scraping: 'Scraping Amazon product data...',
+  scrapingMultiple: 'Scraping multiple Amazon products...',
+  processing: 'Processing URL {current} of {total}...',
   generating: 'Processing extracted data...',
   displaying: 'Success! Displaying product information...',
   error: 'Error occurred while scraping',
   invalidUrl: 'Please enter a valid Amazon product URL',
+  invalidUrls:
+    'One or more URLs are invalid. Please check your Amazon product URLs.',
+  tooManyUrls: `Please enter no more than ${URL_LIMITS.MAX_MULTIPLE_URLS} URLs`,
+  emptyUrlList: 'Please enter at least one Amazon product URL',
   networkError: 'Network error. Please check your connection and try again.',
   timeout:
     'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
@@ -59,6 +83,8 @@ const STATUS_MESSAGES = {
   browserError: 'Browser initialization failed. Please try again.',
   extractionError:
     'Could not extract product data. Please verify this is a valid Amazon product page.',
+  partialSuccess:
+    'Some products could not be scraped. Check individual results.',
 };
 
 // Column display configuration with order and CSS classes
@@ -212,6 +238,45 @@ const validateAmazonUrl = (url) => {
   }
 };
 
+const validateMultipleUrls = (urlsText) => {
+  if (!urlsText || urlsText.trim() === '') {
+    return { valid: false, message: STATUS_MESSAGES.emptyUrlList };
+  }
+
+  // Split by newlines and filter out empty lines
+  const urls = urlsText
+    .split('\n')
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0);
+
+  if (urls.length === 0) {
+    return { valid: false, message: STATUS_MESSAGES.emptyUrlList };
+  }
+
+  if (urls.length > URL_LIMITS.MAX_MULTIPLE_URLS) {
+    return { valid: false, message: STATUS_MESSAGES.tooManyUrls };
+  }
+
+  // Validate each URL
+  const invalidUrls = [];
+  for (let i = 0; i < urls.length; i++) {
+    const validation = validateAmazonUrl(urls[i]);
+    if (!validation.valid) {
+      invalidUrls.push(`Line ${i + 1}: ${validation.message}`);
+    }
+  }
+
+  if (invalidUrls.length > 0) {
+    return {
+      valid: false,
+      message: STATUS_MESSAGES.invalidUrls,
+      details: invalidUrls,
+    };
+  }
+
+  return { valid: true, urls };
+};
+
 const formatCellValue = (key, value) => {
   // Handle N/A values - check for various N/A formats
   if (
@@ -236,39 +301,64 @@ const formatCellValue = (key, value) => {
   return { value, isNA: false, isLink: false };
 };
 
-const displayResults = (productData) => {
+const displayResults = (productDataArray) => {
   try {
     // Clear previous results
     resultsTBody.innerHTML = '';
 
-    // Create a single row with all product data
-    const row = document.createElement('tr');
+    // Handle both single product and array of products
+    const productsArray = Array.isArray(productDataArray)
+      ? productDataArray
+      : [productDataArray];
 
-    // Populate each column according to COLUMN_CONFIG order
-    COLUMN_CONFIG.forEach(({ key, className }) => {
-      const cell = document.createElement('td');
-      cell.className = className;
+    // Create rows for each product
+    productsArray.forEach((productData, index) => {
+      const row = document.createElement('tr');
 
-      const formattedValue = formatCellValue(key, productData[key]);
-
-      if (formattedValue.isNA) {
-        cell.textContent = formattedValue.value;
-        cell.classList.add('na-value');
-      } else if (formattedValue.isLink) {
-        const link = document.createElement('a');
-        link.href = formattedValue.value;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = 'View Product';
-        cell.appendChild(link);
-      } else {
-        cell.textContent = formattedValue.value;
+      // Add error styling if product data indicates failure
+      if (productData.error) {
+        row.classList.add('error-row');
       }
 
-      row.appendChild(cell);
-    });
+      // Populate each column according to COLUMN_CONFIG order
+      COLUMN_CONFIG.forEach(({ key, className }) => {
+        const cell = document.createElement('td');
+        cell.className = className;
 
-    resultsTBody.appendChild(row);
+        let cellValue = productData[key];
+
+        // Handle error case
+        if (productData.error) {
+          if (key === 'title') {
+            cellValue = `Error: ${productData.error}`;
+          } else if (key === 'url') {
+            cellValue = productData.url || 'N/A';
+          } else {
+            cellValue = 'N/A';
+          }
+        }
+
+        const formattedValue = formatCellValue(key, cellValue);
+
+        if (formattedValue.isNA) {
+          cell.textContent = formattedValue.value;
+          cell.classList.add('na-value');
+        } else if (formattedValue.isLink) {
+          const link = document.createElement('a');
+          link.href = formattedValue.value;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = 'View Product';
+          cell.appendChild(link);
+        } else {
+          cell.textContent = formattedValue.value;
+        }
+
+        row.appendChild(cell);
+      });
+
+      resultsTBody.appendChild(row);
+    });
 
     // Show results section
     resultsSection.classList.remove('hidden');
@@ -276,10 +366,108 @@ const displayResults = (productData) => {
     // Scroll to results
     resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    showStatus(STATUS_MESSAGES.displaying, 'success');
+    // Determine success message based on results
+    const hasErrors = productsArray.some((product) => product.error);
+    const successCount = productsArray.filter(
+      (product) => !product.error
+    ).length;
+
+    if (hasErrors && successCount > 0) {
+      showStatus(STATUS_MESSAGES.partialSuccess, 'warning');
+    } else if (successCount > 0) {
+      showStatus(STATUS_MESSAGES.displaying, 'success');
+    } else {
+      showStatus('All products failed to scrape', 'error');
+    }
   } catch (error) {
     console.error('Display error:', error);
     showStatus('Failed to display results. Please try again.', 'error');
+  }
+};
+
+const scrapeMultipleProducts = async (urls) => {
+  try {
+    // Update UI state
+    setButtonState(true);
+    showStatus(STATUS_MESSAGES.scrapingMultiple, 'info');
+    startGradualProgress();
+
+    // Hide previous results
+    resultsSection.classList.add('hidden');
+
+    const results = [];
+    const totalUrls = urls.length;
+
+    // Process URLs sequentially to avoid overwhelming the server
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+
+      // Update status to show current progress
+      const progressMessage = STATUS_MESSAGES.processing
+        .replace('{current}', i + 1)
+        .replace('{total}', totalUrls);
+      showStatus(progressMessage, 'info');
+
+      try {
+        // Make API request for single URL
+        const response = await fetch(
+          `${API_CONFIG.baseUrl}${API_CONFIG.scrapeEndpoint}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url }),
+          }
+        );
+
+        if (response.ok) {
+          const responseData = await response.json();
+          if (responseData.success && responseData.data) {
+            results.push(responseData.data);
+          } else {
+            results.push({ error: 'Invalid response format', url });
+          }
+        } else {
+          // Handle HTTP error
+          let errorMessage = `HTTP ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorMessage;
+          } catch (e) {
+            // Use default error message
+          }
+          results.push({ error: errorMessage, url });
+        }
+      } catch (error) {
+        console.error(`Error scraping ${url}:`, error);
+        results.push({ error: error.message || 'Network error', url });
+      }
+
+      // Add small delay between requests to be respectful to the server
+      if (i < urls.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+
+    // Update status for processing
+    showStatus(STATUS_MESSAGES.generating, 'info');
+
+    // Complete progress and display results
+    completeProgress(() => {
+      displayResults(results);
+    });
+
+    return results;
+  } catch (error) {
+    resetProgressController();
+    updateProgressDisplay(PROGRESS_CONFIG.MIN_VALUE);
+    handleApiError(error);
+    throw error;
+  } finally {
+    // Reset UI state
+    setButtonState(false);
+    hideProgress();
   }
 };
 
@@ -390,28 +578,95 @@ const scrapeProduct = async (url) => {
   }
 };
 
-// Event listeners
-scrapeBtn.addEventListener('click', async () => {
-  const url = urlInput.value.trim();
+// Input mode management functions
+const getCurrentInputMode = () => {
+  return singleModeRadio.checked ? INPUT_MODE.SINGLE : INPUT_MODE.MULTIPLE;
+};
 
-  // Validate URL
-  const validation = validateAmazonUrl(url);
-  if (!validation.valid) {
-    showStatus(validation.message, 'error');
-    return;
+const switchInputMode = (mode) => {
+  if (mode === INPUT_MODE.SINGLE) {
+    singleInputContainer.classList.remove('hidden');
+    multipleInputContainer.classList.add('hidden');
+    singleModeRadio.checked = true;
+    btnText.textContent = 'Scrape Product';
+  } else {
+    singleInputContainer.classList.add('hidden');
+    multipleInputContainer.classList.remove('hidden');
+    multipleModeRadio.checked = true;
+    btnText.textContent = 'Scrape Products';
   }
 
-  // Clear previous status
+  // Clear any existing status messages when switching modes
   hideStatus();
+  resultsSection.classList.add('hidden');
+};
 
-  // Start scraping
-  await scrapeProduct(url);
+// Event listeners
+scrapeBtn.addEventListener('click', async () => {
+  const inputMode = getCurrentInputMode();
+
+  if (inputMode === INPUT_MODE.SINGLE) {
+    // Handle single URL mode
+    const url = urlInput.value.trim();
+
+    // Validate URL
+    const validation = validateAmazonUrl(url);
+    if (!validation.valid) {
+      showStatus(validation.message, 'error');
+      return;
+    }
+
+    // Clear previous status
+    hideStatus();
+
+    // Start scraping
+    await scrapeProduct(url);
+  } else {
+    // Handle multiple URLs mode
+    const urlsText = urlsTextarea.value.trim();
+
+    // Validate URLs
+    const validation = validateMultipleUrls(urlsText);
+    if (!validation.valid) {
+      showStatus(validation.message, 'error');
+      if (validation.details) {
+        console.error('URL validation details:', validation.details);
+      }
+      return;
+    }
+
+    // Clear previous status
+    hideStatus();
+
+    // Start scraping multiple products
+    await scrapeMultipleProducts(validation.urls);
+  }
 });
 
-// Handle Enter key in URL input
+// Handle Enter key in URL inputs
 urlInput.addEventListener('keypress', (event) => {
   if (event.key === 'Enter' && !scrapeBtn.disabled) {
     scrapeBtn.click();
+  }
+});
+
+urlsTextarea.addEventListener('keypress', (event) => {
+  if (event.key === 'Enter' && event.ctrlKey && !scrapeBtn.disabled) {
+    // Ctrl+Enter to submit in textarea mode
+    scrapeBtn.click();
+  }
+});
+
+// Radio button change handlers
+singleModeRadio.addEventListener('change', () => {
+  if (singleModeRadio.checked) {
+    switchInputMode(INPUT_MODE.SINGLE);
+  }
+});
+
+multipleModeRadio.addEventListener('change', () => {
+  if (multipleModeRadio.checked) {
+    switchInputMode(INPUT_MODE.MULTIPLE);
   }
 });
 
@@ -422,8 +677,16 @@ urlInput.addEventListener('input', () => {
   }
 });
 
-// Auto-focus URL input on page load
+urlsTextarea.addEventListener('input', () => {
+  if (statusMessage.style.display !== 'none') {
+    hideStatus();
+  }
+});
+
+// Auto-focus appropriate input on page load
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize to single mode
+  switchInputMode(INPUT_MODE.SINGLE);
   urlInput.focus();
 });
 
@@ -440,6 +703,32 @@ urlInput.addEventListener('paste', (event) => {
 
       if (cleanedUrl !== pastedValue) {
         urlInput.value = cleanedUrl;
+      }
+    }
+  }, 0);
+});
+
+urlsTextarea.addEventListener('paste', (event) => {
+  setTimeout(() => {
+    const pastedValue = urlsTextarea.value;
+    if (pastedValue) {
+      // Clean up URLs in textarea - split by lines and clean each URL
+      const cleanedText = pastedValue
+        .split('\n')
+        .map((line) => {
+          const trimmedLine = line.trim();
+          if (trimmedLine && trimmedLine.includes('amazon.')) {
+            return trimmedLine
+              .replace(/\?ref=.*$/, '') // Remove ref parameters
+              .replace(/&ref=.*$/, '')
+              .replace(/#.*$/, ''); // Remove fragments
+          }
+          return trimmedLine;
+        })
+        .join('\n');
+
+      if (cleanedText !== pastedValue) {
+        urlsTextarea.value = cleanedText;
       }
     }
   }, 0);
