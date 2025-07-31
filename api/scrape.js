@@ -2,6 +2,61 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const ExcelJS = require('exceljs');
+const cheerio = require('cheerio');
+
+// CSS Selector constants for easy editing
+const CSS_SELECTORS = {
+  title: {
+    primary: '#productTitle',
+    fallbacks: [
+      'h1.product-title',
+      '[data-testid="product-title"]',
+      '.product-title',
+      'h1',
+    ],
+  },
+  price: {
+    primary: '.a-price-whole',
+    fallbacks: [
+      '.a-offscreen',
+      '.a-price .a-offscreen',
+      '.a-price-range .a-offscreen',
+      '.price',
+      '[data-testid="price"]',
+    ],
+  },
+  rating: {
+    primary: '[data-hook="average-star-rating"] .a-icon-alt',
+    fallbacks: [
+      '.cr-widget-FocalReviews .a-icon-alt',
+      '.reviewCountTextLinkedHistogram .a-icon-alt',
+      '[title*="out of 5 stars"]',
+      '.a-icon-star .a-icon-alt',
+    ],
+  },
+  reviewCount: {
+    primary: '[data-hook="total-review-count"]',
+    fallbacks: [
+      '#acrCustomerReviewText',
+      '.cr-widget-FocalReviews [data-hook="total-review-count"]',
+      'a[href*="#customerReviews"]',
+      '.reviewCountTextLinkedHistogram',
+    ],
+  },
+  asin: {
+    // ASIN is typically extracted from URL or data attributes
+    dataAttributes: ['[data-asin]', '[data-product-id]'],
+  },
+};
+
+// Regular expressions for data extraction and validation
+const REGEX_PATTERNS = {
+  asinFromUrl: /\/dp\/([A-Z0-9]{10})/,
+  asinFromHtml: /['"](B[A-Z0-9]{9})['"]|data-asin=["']([A-Z0-9]{10})["']/,
+  priceCleanup: /[^\d.,]/g,
+  ratingExtraction: /([0-9.]+)\s*out\s*of\s*5/i,
+  reviewCountExtraction: /([0-9,]+)/,
+};
 
 // Configuration constants
 const SCRAPING_CONFIG = {
@@ -36,6 +91,11 @@ const EXCEL_CONFIG = {
     'Number of Reviews',
     'Product URL',
   ],
+};
+
+const DEFAULT_VALUES = {
+  notAvailable: 'N/A',
+  extractionFailed: 'Data extraction failed',
 };
 
 // Simple logging function
@@ -108,148 +168,187 @@ const makeHttpRequest = (url, options = {}) => {
   });
 };
 
-// Simple HTML parser functions
-const extractTextBetween = (html, startPattern, endPattern) => {
-  const startIndex = html.indexOf(startPattern);
-  if (startIndex === -1) return null;
+// Extract text using CSS selectors with fallback support
+const extractTextWithSelectors = ($, selectorConfig, extractionType) => {
+  // Try primary selector first
+  let element = $(selectorConfig.primary);
+  if (element.length > 0 && element.text().trim()) {
+    return element.text().trim();
+  }
 
-  const contentStart = startIndex + startPattern.length;
-  const endIndex = html.indexOf(endPattern, contentStart);
-  if (endIndex === -1) return null;
+  // Try fallback selectors
+  for (const fallbackSelector of selectorConfig.fallbacks || []) {
+    element = $(fallbackSelector);
+    if (element.length > 0 && element.text().trim()) {
+      log(`Used fallback selector for ${extractionType}: ${fallbackSelector}`);
+      return element.text().trim();
+    }
+  }
 
-  return html.substring(contentStart, endIndex).trim();
+  log(`No element found for ${extractionType} using any selector`, 'WARN');
+  return null;
 };
 
-const extractTextFromTag = (html, tagPattern) => {
-  const match = html.match(tagPattern);
-  return match ? match[1].trim() : null;
+// Extract and clean title text
+const extractTitle = ($) => {
+  const titleText = extractTextWithSelectors($, CSS_SELECTORS.title, 'title');
+
+  if (!titleText) {
+    return DEFAULT_VALUES.notAvailable;
+  }
+
+  // Clean title text and validate
+  const cleanedTitle = titleText.replace(/\s+/g, ' ').trim();
+
+  if (cleanedTitle && !cleanedTitle.toLowerCase().includes('amazon.com')) {
+    return cleanedTitle;
+  }
+
+  return DEFAULT_VALUES.notAvailable;
 };
 
-const decodeHtmlEntities = (text) => {
-  const entities = {
-    '&amp;': '&',
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&#x27;': "'",
-    '&#x2F;': '/',
-    '&#39;': "'",
-    '&nbsp;': ' ',
-  };
+// Extract and format price
+const extractPrice = ($) => {
+  const priceText = extractTextWithSelectors($, CSS_SELECTORS.price, 'price');
 
-  return text.replace(/&[#\w]+;/g, (entity) => entities[entity] || entity);
+  if (!priceText) {
+    return DEFAULT_VALUES.notAvailable;
+  }
+
+  // Clean price text using regex pattern
+  const cleanedPrice = priceText
+    .replace(REGEX_PATTERNS.priceCleanup, '')
+    .trim();
+
+  if (cleanedPrice && cleanedPrice !== '') {
+    return '$' + cleanedPrice;
+  }
+
+  return DEFAULT_VALUES.notAvailable;
 };
 
-// Extract product data from HTML
+// Extract ASIN from URL or HTML data attributes
+const extractAsin = ($, url) => {
+  // First try to extract ASIN from URL using regex
+  const urlMatch = url.match(REGEX_PATTERNS.asinFromUrl);
+  if (urlMatch) {
+    return urlMatch[1];
+  }
+
+  // Try to find ASIN in data attributes using CSS selectors
+  for (const selector of CSS_SELECTORS.asin.dataAttributes) {
+    const element = $(selector);
+    if (element.length > 0) {
+      const asinValue =
+        element.attr('data-asin') || element.attr('data-product-id');
+      if (asinValue && asinValue.match(/^[A-Z0-9]{10}$/)) {
+        log(`Found ASIN in data attribute: ${asinValue}`);
+        return asinValue;
+      }
+    }
+  }
+
+  // Fallback to regex search in HTML content
+  const htmlContent = $.html();
+  const htmlMatch = htmlContent.match(REGEX_PATTERNS.asinFromHtml);
+  if (htmlMatch) {
+    return htmlMatch[1] || htmlMatch[2];
+  }
+
+  return DEFAULT_VALUES.notAvailable;
+};
+
+// Extract and format rating
+const extractRating = ($) => {
+  const ratingText = extractTextWithSelectors(
+    $,
+    CSS_SELECTORS.rating,
+    'rating'
+  );
+
+  if (!ratingText) {
+    return DEFAULT_VALUES.notAvailable;
+  }
+
+  // Extract numeric rating using regex
+  const ratingMatch = ratingText.match(REGEX_PATTERNS.ratingExtraction);
+  if (ratingMatch) {
+    return ratingMatch[1] + ' out of 5 stars';
+  }
+
+  // If the text already contains rating info, use it directly
+  if (
+    ratingText.toLowerCase().includes('out of') &&
+    ratingText.toLowerCase().includes('star')
+  ) {
+    return ratingText;
+  }
+
+  return DEFAULT_VALUES.notAvailable;
+};
+
+// Extract and format review count
+const extractReviewCount = ($) => {
+  const reviewText = extractTextWithSelectors(
+    $,
+    CSS_SELECTORS.reviewCount,
+    'review count'
+  );
+
+  if (!reviewText) {
+    return DEFAULT_VALUES.notAvailable;
+  }
+
+  // Extract numeric count using regex
+  const countMatch = reviewText.match(REGEX_PATTERNS.reviewCountExtraction);
+  if (countMatch) {
+    return countMatch[1] + ' ratings';
+  }
+
+  return DEFAULT_VALUES.notAvailable;
+};
+
+// Extract product data from HTML using CSS selectors
 const extractProductData = (html, url) => {
-  log('Starting data extraction from HTML');
+  log('Starting data extraction from HTML using CSS selectors');
 
   const productData = {
-    title: 'N/A',
-    price: 'N/A',
-    asin: 'N/A',
-    rating: 'N/A',
-    reviewCount: 'N/A',
+    title: DEFAULT_VALUES.notAvailable,
+    price: DEFAULT_VALUES.notAvailable,
+    asin: DEFAULT_VALUES.notAvailable,
+    rating: DEFAULT_VALUES.notAvailable,
+    reviewCount: DEFAULT_VALUES.notAvailable,
     url: url,
   };
 
   try {
-    // Extract title - multiple patterns to try
-    const titlePatterns = [
-      /<span[^>]*id="productTitle"[^>]*>([^<]+)<\/span>/i,
-      /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
-      /<title>([^<]+)<\/title>/i,
-    ];
+    // Load HTML into cheerio for CSS selector parsing
+    const $ = cheerio.load(html);
 
-    for (const pattern of titlePatterns) {
-      const titleMatch = html.match(pattern);
-      if (titleMatch) {
-        const title = decodeHtmlEntities(titleMatch[1])
-          .replace(/\s+/g, ' ')
-          .trim();
-        if (title && !title.toLowerCase().includes('amazon.com')) {
-          productData.title = title;
-          break;
-        }
-      }
-    }
+    // Extract all product data using CSS selectors
+    productData.title = extractTitle($);
+    productData.price = extractPrice($);
+    productData.asin = extractAsin($, url);
+    productData.rating = extractRating($);
+    productData.reviewCount = extractReviewCount($);
 
-    // Extract price - multiple patterns
-    const pricePatterns = [
-      /<span[^>]*class="[^"]*a-price-whole[^"]*"[^>]*>([^<]+)<\/span>/i,
-      /<span[^>]*class="[^"]*a-offscreen[^"]*"[^>]*>\$?([^<]+)<\/span>/i,
-      /<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?([^<]+)<\/span>/i,
-      /Price[^:]*:\s*\$?([0-9,]+\.?[0-9]*)/i,
-    ];
-
-    for (const pattern of pricePatterns) {
-      const priceMatch = html.match(pattern);
-      if (priceMatch) {
-        const priceText = priceMatch[1].replace(/[^\d.,]/g, '').trim();
-        if (priceText && priceText !== '') {
-          productData.price = '$' + priceText;
-          break;
-        }
-      }
-    }
-
-    // Extract ASIN from URL or HTML
-    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
-    if (asinMatch) {
-      productData.asin = asinMatch[1];
-    } else {
-      // Try to find ASIN in HTML
-      const asinHtmlMatch =
-        html.match(/['"](B[A-Z0-9]{9})['"]/) ||
-        html.match(/data-asin=["']([A-Z0-9]{10})["']/);
-      if (asinHtmlMatch) {
-        productData.asin = asinHtmlMatch[1];
-      }
-    }
-
-    // Extract rating
-    const ratingPatterns = [
-      /([0-9.]+)\s+out\s+of\s+5\s+stars/i,
-      /rating[^>]*>([0-9.]+)\s*<\/[^>]*>/i,
-      /stars[^>]*>([0-9.]+)/i,
-    ];
-
-    for (const pattern of ratingPatterns) {
-      const ratingMatch = html.match(pattern);
-      if (ratingMatch) {
-        productData.rating = ratingMatch[1] + ' out of 5 stars';
-        break;
-      }
-    }
-
-    // Extract review count
-    const reviewPatterns = [
-      /([0-9,]+)\s+ratings?/i,
-      /([0-9,]+)\s+reviews?/i,
-      /([0-9,]+)\s+customer\s+reviews?/i,
-    ];
-
-    for (const pattern of reviewPatterns) {
-      const reviewMatch = html.match(pattern);
-      if (reviewMatch) {
-        productData.reviewCount = reviewMatch[1] + ' ratings';
-        break;
-      }
-    }
-
-    log(`Successfully extracted data: ${JSON.stringify(productData)}`);
+    log(
+      `Successfully extracted data using CSS selectors: ${JSON.stringify(
+        productData
+      )}`
+    );
     return productData;
   } catch (error) {
     log(`Data extraction error: ${error.message}`, 'ERROR');
 
-    // Return basic data with ASIN from URL if available
-    const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
+    // Return basic data with ASIN from URL if available for error cases
+    const asinMatch = url.match(REGEX_PATTERNS.asinFromUrl);
     return {
-      title: 'Data extraction failed',
-      price: 'N/A',
-      asin: asinMatch ? asinMatch[1] : 'N/A',
-      rating: 'N/A',
-      reviewCount: 'N/A',
+      title: DEFAULT_VALUES.extractionFailed,
+      price: DEFAULT_VALUES.notAvailable,
+      asin: asinMatch ? asinMatch[1] : DEFAULT_VALUES.notAvailable,
+      rating: DEFAULT_VALUES.notAvailable,
+      reviewCount: DEFAULT_VALUES.notAvailable,
       url: url,
     };
   }
