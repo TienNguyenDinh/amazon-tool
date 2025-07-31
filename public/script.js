@@ -91,9 +91,15 @@ const validateAmazonUrl = (url) => {
 };
 
 const formatCellValue = (key, value) => {
-  // Handle N/A values
-  if (value === 'N/A' || value === 'Data extraction failed') {
-    return { value, isNA: true };
+  // Handle N/A values - check for various N/A formats
+  if (
+    value === 'N/A' ||
+    value === 'Data extraction failed' ||
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
+    return { value: 'N/A', isNA: true };
   }
 
   // Special formatting for URL field - create clickable link

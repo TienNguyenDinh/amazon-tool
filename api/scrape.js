@@ -2,35 +2,43 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const cheerio = require('cheerio');
+const zlib = require('zlib');
 
 // CSS Selector constants for easy editing
 const CSS_SELECTORS = {
   title: {
     primary: '#productTitle',
     fallbacks: [
+      'h1[data-automation-id="product-title"]',
       'h1.product-title',
       '[data-testid="product-title"]',
       '.product-title',
+      'h1 span',
       'h1',
     ],
   },
   price: {
-    primary: '.a-price-whole',
+    primary: '.a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen',
     fallbacks: [
-      '.a-offscreen',
       '.a-price .a-offscreen',
+      '.a-price-whole',
+      '.a-price.aok-align-center .a-offscreen',
       '.a-price-range .a-offscreen',
       '.price',
       '[data-testid="price"]',
+      '.a-text-price .a-offscreen',
+      'span.a-price.a-text-price .a-offscreen',
     ],
   },
   rating: {
     primary: '[data-hook="average-star-rating"] .a-icon-alt',
     fallbacks: [
+      '.a-icon.a-icon-star .a-icon-alt',
       '.cr-widget-FocalReviews .a-icon-alt',
       '.reviewCountTextLinkedHistogram .a-icon-alt',
       '[title*="out of 5 stars"]',
       '.a-icon-star .a-icon-alt',
+      'span[data-hook="rating-out-of-text"]',
     ],
   },
   reviewCount: {
@@ -40,11 +48,13 @@ const CSS_SELECTORS = {
       '.cr-widget-FocalReviews [data-hook="total-review-count"]',
       'a[href*="#customerReviews"]',
       '.reviewCountTextLinkedHistogram',
+      'span[data-hook="total-review-count"]',
+      '#acrCustomerReviewLink',
     ],
   },
   asin: {
     // ASIN is typically extracted from URL or data attributes
-    dataAttributes: ['[data-asin]', '[data-product-id]'],
+    dataAttributes: ['[data-asin]', '[data-product-id]', '[data-csa-c-asin]'],
   },
 };
 
@@ -62,20 +72,23 @@ const SCRAPING_CONFIG = {
   timeout: 30000,
   waitTime: 1000,
   userAgent:
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   maxRetryAttempts: 2,
   retryDelay: 2000,
   headers: {
     Accept:
-      'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+    'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
     Connection: 'keep-alive',
     'Upgrade-Insecure-Requests': '1',
     'Sec-Fetch-Dest': 'document',
     'Sec-Fetch-Mode': 'navigate',
     'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
     'Cache-Control': 'max-age=0',
+    DNT: '1',
+    'Sec-GPC': '1',
   },
 };
 
@@ -90,7 +103,7 @@ const log = (message, level = 'INFO') => {
   console.log(`[${timestamp}] [${level}] ${message}`);
 };
 
-// HTTP request helper function
+// HTTP request helper function with compression support
 const makeHttpRequest = (url, options = {}) => {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
@@ -111,8 +124,6 @@ const makeHttpRequest = (url, options = {}) => {
     };
 
     const req = requestModule.request(requestOptions, (res) => {
-      let data = '';
-
       // Handle redirects
       if (
         res.statusCode >= 300 &&
@@ -131,13 +142,31 @@ const makeHttpRequest = (url, options = {}) => {
         return;
       }
 
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
+      // Handle compressed responses
+      let stream = res;
+      const encoding = res.headers['content-encoding'];
+
+      if (encoding === 'gzip') {
+        stream = res.pipe(zlib.createGunzip());
+      } else if (encoding === 'deflate') {
+        stream = res.pipe(zlib.createInflate());
+      } else if (encoding === 'br') {
+        stream = res.pipe(zlib.createBrotliDecompress());
+      }
+
+      let data = '';
+      stream.setEncoding('utf8');
+
+      stream.on('data', (chunk) => {
         data += chunk;
       });
 
-      res.on('end', () => {
+      stream.on('end', () => {
         resolve(data);
+      });
+
+      stream.on('error', (error) => {
+        reject(new Error(`Decompression failed: ${error.message}`));
       });
     });
 
@@ -195,21 +224,52 @@ const extractTitle = ($) => {
 
 // Extract and format price
 const extractPrice = ($) => {
-  const priceText = extractTextWithSelectors($, CSS_SELECTORS.price, 'price');
+  const priceSelectors = [
+    '.a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen',
+    '.a-price.aok-align-center .a-offscreen',
+    '.a-price .a-offscreen',
+    '.a-text-price .a-offscreen',
+    'span.a-price.a-text-price .a-offscreen',
+    '.a-price-whole',
+    '.a-price-range .a-offscreen',
+  ];
 
-  if (!priceText) {
-    return DEFAULT_VALUES.notAvailable;
+  for (const selector of priceSelectors) {
+    const priceElement = $(selector).first();
+    if (priceElement.length > 0) {
+      const priceText = priceElement.text().trim();
+      if (priceText && priceText.includes('$')) {
+        log(`Found price using selector: ${selector}`, 'INFO');
+
+        // Extract just the first valid price
+        const priceMatch = priceText.match(/\$[\d,]+\.?\d*/);
+        if (priceMatch) {
+          return priceMatch[0];
+        }
+      }
+    }
   }
 
-  // Clean price text using regex pattern
-  const cleanedPrice = priceText
-    .replace(REGEX_PATTERNS.priceCleanup, '')
-    .trim();
-
-  if (cleanedPrice && cleanedPrice !== '') {
-    return '$' + cleanedPrice;
+  // Fallback: try to find any price-like text in the main product area
+  const productPriceArea = $(
+    '#apex_desktop, #corePrice_desktop, #priceblock_dealprice, #priceblock_ourprice'
+  );
+  if (productPriceArea.length > 0) {
+    const priceText = productPriceArea
+      .find('.a-offscreen')
+      .first()
+      .text()
+      .trim();
+    if (priceText && priceText.includes('$')) {
+      const priceMatch = priceText.match(/\$[\d,]+\.?\d*/);
+      if (priceMatch) {
+        log(`Found price in product area: ${priceMatch[0]}`, 'INFO');
+        return priceMatch[0];
+      }
+    }
   }
 
+  log('No valid price found with any selector', 'WARN');
   return DEFAULT_VALUES.notAvailable;
 };
 
@@ -275,22 +335,41 @@ const extractRating = ($) => {
 
 // Extract and format review count
 const extractReviewCount = ($) => {
-  const reviewText = extractTextWithSelectors(
-    $,
-    CSS_SELECTORS.reviewCount,
-    'review count'
-  );
+  const reviewSelectors = [
+    '[data-hook="total-review-count"]',
+    '#acrCustomerReviewText',
+    'a[href*="#customerReviews"]',
+    'span[data-hook="total-review-count"]',
+    '#acrCustomerReviewLink',
+    '.cr-widget-FocalReviews [data-hook="total-review-count"]',
+  ];
 
-  if (!reviewText) {
-    return DEFAULT_VALUES.notAvailable;
+  for (const selector of reviewSelectors) {
+    const reviewElement = $(selector).first();
+    if (reviewElement.length > 0) {
+      const reviewText = reviewElement.text().trim();
+      if (reviewText) {
+        log(`Found review count using selector: ${selector}`, 'INFO');
+
+        // Extract numeric count and format consistently
+        const countMatch = reviewText.match(/([0-9,]+)/);
+        if (countMatch) {
+          const count = countMatch[1];
+          // Check if it already contains "rating" or "review"
+          if (
+            reviewText.toLowerCase().includes('rating') ||
+            reviewText.toLowerCase().includes('review')
+          ) {
+            return reviewText; // Return as-is if already formatted
+          } else {
+            return count + ' ratings'; // Add "ratings" suffix
+          }
+        }
+      }
+    }
   }
 
-  // Extract numeric count using regex
-  const countMatch = reviewText.match(REGEX_PATTERNS.reviewCountExtraction);
-  if (countMatch) {
-    return countMatch[1] + ' ratings';
-  }
-
+  log('No review count found with any selector', 'WARN');
   return DEFAULT_VALUES.notAvailable;
 };
 
@@ -340,67 +419,153 @@ const extractProductData = (html, url) => {
   }
 };
 
-// Main scraping function
+// Main scraping function with retry logic
 const scrapeAmazonProduct = async (url) => {
-  try {
-    log(`Starting scrape session for: ${url}`);
+  let lastError;
 
-    // Validate URL
-    if (!url || !url.includes('amazon.')) {
-      throw new Error('Invalid Amazon URL - URL must contain "amazon."');
-    }
-
-    // Clean URL
-    const cleanUrl = url.split('?')[0];
-    log(`Using clean URL: ${cleanUrl}`);
-
-    // Make HTTP request to get the page
-    log('Making HTTP request to Amazon...');
-    const html = await makeHttpRequest(cleanUrl);
-
-    if (!html || html.length < 1000) {
-      throw new Error('Received empty or incomplete response from Amazon');
-    }
-
-    log(`Received HTML response (${html.length} characters)`);
-
-    // Extract product data from HTML
-    const productData = extractProductData(html, url);
-
-    log('Scraping completed successfully');
-    return productData;
-  } catch (error) {
-    log(`Scraping error: ${error.message}`, 'ERROR');
-
-    // Classify errors for better user feedback
-    if (
-      error.message.includes('Request failed') ||
-      error.message.includes('ENOTFOUND') ||
-      error.message.includes('ECONNREFUSED')
-    ) {
-      throw new Error(
-        'Network connection error. Please check your internet connection and try again.'
+  for (
+    let attempt = 1;
+    attempt <= SCRAPING_CONFIG.maxRetryAttempts;
+    attempt++
+  ) {
+    try {
+      log(
+        `Starting scrape session for: ${url} (attempt ${attempt}/${SCRAPING_CONFIG.maxRetryAttempts})`
       );
-    } else if (
-      error.message.includes('timeout') ||
-      error.message.includes('Request timeout')
-    ) {
-      throw new Error(
-        'Page loading timeout. Amazon may be experiencing issues or blocking requests.'
-      );
-    } else if (error.message.includes('Invalid Amazon URL')) {
-      throw new Error('Please provide a valid Amazon product URL.');
-    } else if (
-      error.message.includes('HTTP 4') ||
-      error.message.includes('HTTP 5')
-    ) {
-      throw new Error(
-        'Amazon returned an error response. The product may not exist or be temporarily unavailable.'
-      );
-    }
 
-    throw error;
+      // Validate URL
+      if (!url || !url.includes('amazon.')) {
+        throw new Error('Invalid Amazon URL - URL must contain "amazon."');
+      }
+
+      // Clean URL but preserve important parameters
+      const cleanUrl = url.split('#')[0]; // Remove fragment only
+      log(`Using clean URL: ${cleanUrl}`);
+
+      // Add random delay to mimic human behavior
+      const baseDelay = attempt === 1 ? 500 : SCRAPING_CONFIG.retryDelay;
+      const randomDelay = baseDelay + Math.random() * 1000; // Add 0-1 second random delay
+
+      if (attempt > 1 || Math.random() < 0.3) {
+        // 30% chance of delay even on first attempt
+        log(`Waiting ${Math.round(randomDelay)}ms before request...`);
+        await new Promise((resolve) => setTimeout(resolve, randomDelay));
+      }
+
+      // Make HTTP request to get the page with realistic headers
+      log('Making HTTP request to Amazon...');
+      const additionalHeaders = {
+        Referer: 'https://www.amazon.com/',
+        Origin: 'https://www.amazon.com',
+        'X-Requested-With': 'XMLHttpRequest',
+      };
+      const html = await makeHttpRequest(cleanUrl, {
+        headers: additionalHeaders,
+      });
+
+      if (!html || html.length < 1000) {
+        throw new Error(
+          'Received empty or incomplete response from Amazon - possible bot detection'
+        );
+      }
+
+      log(`Received HTML response (${html.length} characters)`);
+
+      // Check for bot detection patterns
+      const botDetectionPatterns = [
+        'robot',
+        'captcha',
+        'To discuss automated access',
+        'Sorry, we just need to make sure you',
+        'Enter the characters you see below',
+        'Type the characters you see in this image',
+      ];
+
+      const lowerHtml = html.toLowerCase();
+      const detectedPattern = botDetectionPatterns.find((pattern) =>
+        lowerHtml.includes(pattern.toLowerCase())
+      );
+
+      if (detectedPattern) {
+        log(`Bot detection pattern found: ${detectedPattern}`, 'WARN');
+        log('Continuing with data extraction despite bot detection...', 'INFO');
+      }
+
+      // Extract product data from HTML
+      const productData = extractProductData(html, url);
+
+      // Validate that we extracted meaningful data
+      if (
+        productData.title === DEFAULT_VALUES.notAvailable &&
+        productData.price === DEFAULT_VALUES.notAvailable &&
+        productData.rating === DEFAULT_VALUES.notAvailable
+      ) {
+        throw new Error(
+          'No product data could be extracted - page structure may have changed'
+        );
+      }
+
+      log('Scraping completed successfully');
+      return productData;
+    } catch (error) {
+      lastError = error;
+      log(`Scraping attempt ${attempt} failed: ${error.message}`, 'ERROR');
+
+      // Don't retry for certain types of errors
+      if (
+        error.message.includes('Invalid Amazon URL') ||
+        error.message.includes('bot detection') ||
+        error.message.includes('HTTP 4')
+      ) {
+        break;
+      }
+
+      // Continue to next attempt if we have retries left
+      if (attempt < SCRAPING_CONFIG.maxRetryAttempts) {
+        log(`Will retry in ${SCRAPING_CONFIG.retryDelay}ms...`);
+        continue;
+      }
+    }
   }
+
+  // All attempts failed, classify the final error
+  log(`All ${SCRAPING_CONFIG.maxRetryAttempts} attempts failed`, 'ERROR');
+
+  if (
+    lastError.message.includes('Request failed') ||
+    lastError.message.includes('ENOTFOUND') ||
+    lastError.message.includes('ECONNREFUSED')
+  ) {
+    throw new Error(
+      'Network connection error. Please check your internet connection and try again.'
+    );
+  } else if (
+    lastError.message.includes('timeout') ||
+    lastError.message.includes('Request timeout')
+  ) {
+    throw new Error(
+      'Page loading timeout. Amazon may be experiencing issues or blocking requests.'
+    );
+  } else if (lastError.message.includes('Invalid Amazon URL')) {
+    throw new Error('Please provide a valid Amazon product URL.');
+  } else if (lastError.message.includes('bot detection')) {
+    throw new Error(
+      'Amazon detected automated access. Please wait a few minutes and try again.'
+    );
+  } else if (
+    lastError.message.includes('HTTP 4') ||
+    lastError.message.includes('HTTP 5')
+  ) {
+    throw new Error(
+      'Amazon returned an error response. The product may not exist or be temporarily unavailable.'
+    );
+  } else if (lastError.message.includes('No product data could be extracted')) {
+    throw new Error(
+      'Could not extract product information. The page structure may have changed or this may not be a product page.'
+    );
+  }
+
+  throw lastError;
 };
 
 // API handler with proper error handling
