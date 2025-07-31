@@ -1,7 +1,6 @@
 const https = require('https');
 const http = require('http');
 const { URL } = require('url');
-const ExcelJS = require('exceljs');
 const cheerio = require('cheerio');
 
 // CSS Selector constants for easy editing
@@ -78,19 +77,6 @@ const SCRAPING_CONFIG = {
     'Sec-Fetch-Site': 'none',
     'Cache-Control': 'max-age=0',
   },
-};
-
-const EXCEL_CONFIG = {
-  worksheetName: 'Amazon Product Data',
-  fileName: 'product_data.xlsx',
-  headers: [
-    'Product Title',
-    'Price',
-    'ASIN',
-    'Star Rating',
-    'Number of Reviews',
-    'Product URL',
-  ],
 };
 
 const DEFAULT_VALUES = {
@@ -417,48 +403,6 @@ const scrapeAmazonProduct = async (url) => {
   }
 };
 
-// Generate Excel file function
-const generateExcelFile = async (productData) => {
-  try {
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(EXCEL_CONFIG.worksheetName);
-
-    // Add headers
-    worksheet.addRow(EXCEL_CONFIG.headers);
-
-    // Style headers
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' },
-    };
-
-    // Add data row
-    worksheet.addRow([
-      productData.title,
-      productData.price,
-      productData.asin,
-      productData.rating,
-      productData.reviewCount,
-      productData.url,
-    ]);
-
-    // Auto-fit columns
-    worksheet.columns.forEach((column) => {
-      column.width = 20;
-    });
-
-    // Generate buffer
-    const buffer = await workbook.xlsx.writeBuffer();
-    return buffer;
-  } catch (error) {
-    log(`Excel generation error: ${error.message}`, 'ERROR');
-    throw new Error('Failed to generate Excel file');
-  }
-};
-
 // API handler with proper error handling
 module.exports = async (req, res) => {
   // Enable CORS
@@ -493,25 +437,13 @@ module.exports = async (req, res) => {
     // Scrape product data
     const productData = await scrapeAmazonProduct(url);
 
-    // Generate Excel file
-    const excelBuffer = await generateExcelFile(productData);
-
-    // Generate filename with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `amazon_product_${timestamp}.xlsx`;
-
-    // Set response headers for file download
-    res.setHeader(
-      'Content-Type',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    );
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', excelBuffer.length);
-
     log('API request completed successfully');
 
-    // Send Excel file
-    res.send(excelBuffer);
+    // Return JSON response instead of Excel file
+    res.status(200).json({
+      success: true,
+      data: productData,
+    });
   } catch (error) {
     log(`API request failed: ${error.message}`, 'ERROR');
 

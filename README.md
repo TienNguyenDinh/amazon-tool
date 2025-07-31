@@ -1,11 +1,11 @@
 # Amazon Product Scraper
 
-A full-stack web application that allows users to input an Amazon product URL, scrapes key data from the product page, and provides the data as a downloadable Excel file.
+A full-stack web application that allows users to input an Amazon product URL, scrapes key data from the product page, and displays the data in a professional table format.
 
 ## Features
 
 - 🔍 **Web Scraping**: Uses HTTP requests with intelligent HTML parsing for serverless compatibility
-- 📊 **Excel Export**: Generates formatted Excel files with product data
+- 📊 **Professional Table Display**: Shows product data in a modern, responsive table format
 - 🛡️ **Anti-Blocking**: Implements realistic headers and request patterns
 - 🎨 **Modern UI**: Clean, responsive web interface
 - ⚡ **Real-time Feedback**: Progress indicators and status updates
@@ -27,7 +27,7 @@ A full-stack web application that allows users to input an Amazon product URL, s
 - **Node.js** - Runtime environment
 - **Express.js** - Web framework
 - **HTTP Requests** - Native Node.js HTTP client for web scraping
-- **ExcelJS** - Excel file generation
+- **Cheerio** - HTML parsing and CSS selector support
 - **CORS** - Cross-origin resource sharing
 
 ### Frontend

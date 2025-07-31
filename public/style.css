@@ -17,7 +17,7 @@ body {
 }
 
 .container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   background: white;
   border-radius: 12px;
@@ -185,6 +185,127 @@ main {
   }
 }
 
+/* Results section */
+.results-section {
+  margin: 30px 0;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.results-section h3 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  margin: 0;
+  padding: 20px 30px;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.table-container {
+  overflow-x: auto;
+  background-color: white;
+}
+
+.results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+  background-color: white;
+  margin: 0;
+}
+
+.results-table thead {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.results-table th {
+  padding: 18px 16px;
+  text-align: center;
+  font-weight: 600;
+  color: #2c3e50;
+  border-bottom: 2px solid #e9ecef;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  min-width: 120px;
+}
+
+.results-table td {
+  padding: 16px 16px;
+  border-bottom: 1px solid #f1f3f4;
+  vertical-align: top;
+  line-height: 1.5;
+  max-width: 200px;
+  word-wrap: break-word;
+}
+
+.results-table tbody tr:hover {
+  background-color: #f8f9ff;
+  transition: background-color 0.2s ease;
+}
+
+.results-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Column-specific styling */
+.results-table .title-cell {
+  max-width: 250px;
+  font-weight: 500;
+  color: #212529;
+}
+
+.results-table .price-cell {
+  font-weight: 600;
+  color: #28a745;
+  font-size: 16px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.results-table .asin-cell {
+  font-family: monospace;
+  font-size: 14px;
+  color: #495057;
+  text-align: center;
+}
+
+.results-table .rating-cell {
+  color: #ffc107;
+  font-weight: 500;
+  text-align: center;
+}
+
+.results-table .reviews-cell {
+  color: #495057;
+  text-align: center;
+}
+
+.results-table .url-cell {
+  max-width: 150px;
+  text-align: center;
+}
+
+.results-table .url-cell a {
+  color: #667eea;
+  text-decoration: none;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.results-table .url-cell a:hover {
+  text-decoration: underline;
+}
+
+.results-table .na-value {
+  color: #6c757d;
+  font-style: italic;
+  text-align: center;
+}
+
 /* Info section */
 .info-section {
   background-color: #f8f9fa;
@@ -264,6 +385,30 @@ footer {
   .info-section {
     padding: 20px;
   }
+
+  .results-section h3 {
+    padding: 15px 20px;
+    font-size: 1.1rem;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: 12px 8px;
+    font-size: 14px;
+  }
+
+  .results-table th {
+    font-size: 11px;
+    min-width: 80px;
+  }
+
+  .results-table .price-cell {
+    font-size: 14px;
+  }
+
+  .results-table .title-cell {
+    max-width: 150px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -278,5 +423,32 @@ footer {
   #scrape-btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .table-container {
+    margin: 0 -20px; /* Extend table to edge on mobile */
+  }
+
+  .results-table {
+    font-size: 14px;
+  }
+
+  .results-table th,
+  .results-table td {
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+
+  .results-table th {
+    font-size: 10px;
+    min-width: 60px;
+  }
+
+  .results-table .title-cell {
+    max-width: 120px;
+  }
+
+  .results-table .url-cell a {
+    font-size: 10px;
   }
 }

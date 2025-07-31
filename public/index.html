@@ -10,7 +10,9 @@
     <div class="container">
       <header>
         <h1>Amazon Product Scraper</h1>
-        <p>Extract product data from Amazon and download as Excel file</p>
+        <p>
+          Extract product data from Amazon and display in a professional table
+        </p>
       </header>
 
       <main>
@@ -35,13 +37,34 @@
           </div>
         </div>
 
+        <div id="results-section" class="results-section hidden">
+          <h3>Product Information</h3>
+          <div class="table-container">
+            <table id="results-table" class="results-table">
+              <thead>
+                <tr>
+                  <th>Product Title</th>
+                  <th>Price</th>
+                  <th>ASIN</th>
+                  <th>Star Rating</th>
+                  <th>Number of Reviews</th>
+                  <th>Product URL</th>
+                </tr>
+              </thead>
+              <tbody id="results-tbody">
+                <!-- Table row will be populated dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="info-section">
           <h3>How to use:</h3>
           <ol>
             <li>Copy an Amazon product URL from your browser</li>
             <li>Paste it into the input field above</li>
             <li>Click "Scrape Product" to extract data</li>
-            <li>The Excel file will automatically download</li>
+            <li>View the extracted data in the professional table below</li>
           </ol>
 
           <div class="warning">
@@ -53,7 +76,7 @@
       </main>
 
       <footer>
-        <p>Built with Node.js, Express, Playwright, and ExcelJS</p>
+        <p>Built with Node.js, Express, and Cheerio</p>
       </footer>
     </div>
 

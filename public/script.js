@@ -5,6 +5,8 @@ const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
 const statusMessage = document.getElementById('status-message');
 const progressBar = document.getElementById('progress-bar');
+const resultsSection = document.getElementById('results-section');
+const resultsTBody = document.getElementById('results-tbody');
 
 // Configuration constants optimized for Vercel deployment
 const API_CONFIG = {
@@ -15,8 +17,8 @@ const API_CONFIG = {
 
 const STATUS_MESSAGES = {
   scraping: 'Scraping Amazon product data...',
-  generating: 'Generating Excel file...',
-  downloading: 'Success! Downloading file...',
+  generating: 'Processing extracted data...',
+  displaying: 'Success! Displaying product information...',
   error: 'Error occurred while scraping',
   invalidUrl: 'Please enter a valid Amazon product URL',
   networkError: 'Network error. Please check your connection and try again.',
@@ -30,6 +32,16 @@ const STATUS_MESSAGES = {
   extractionError:
     'Could not extract product data. Please verify this is a valid Amazon product page.',
 };
+
+// Column display configuration with order and CSS classes
+const COLUMN_CONFIG = [
+  { key: 'title', className: 'title-cell' },
+  { key: 'price', className: 'price-cell' },
+  { key: 'asin', className: 'asin-cell' },
+  { key: 'rating', className: 'rating-cell' },
+  { key: 'reviewCount', className: 'reviews-cell' },
+  { key: 'url', className: 'url-cell' },
+];
 
 // Utility functions
 const showStatus = (message, type = 'info') => {
@@ -78,29 +90,68 @@ const validateAmazonUrl = (url) => {
   }
 };
 
-const downloadFile = (blob, filename) => {
+const formatCellValue = (key, value) => {
+  // Handle N/A values
+  if (value === 'N/A' || value === 'Data extraction failed') {
+    return { value, isNA: true };
+  }
+
+  // Special formatting for URL field - create clickable link
+  if (key === 'url') {
+    return {
+      value: value,
+      isLink: true,
+    };
+  }
+
+  // All other fields return value as-is
+  return { value, isNA: false, isLink: false };
+};
+
+const displayResults = (productData) => {
   try {
-    // Create a temporary URL for the blob
-    const url = URL.createObjectURL(blob);
+    // Clear previous results
+    resultsTBody.innerHTML = '';
 
-    // Create a temporary download link
-    const downloadLink = document.createElement('a');
-    downloadLink.href = url;
-    downloadLink.download = filename;
-    downloadLink.style.display = 'none';
+    // Create a single row with all product data
+    const row = document.createElement('tr');
 
-    // Append to body, click, and remove
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    // Populate each column according to COLUMN_CONFIG order
+    COLUMN_CONFIG.forEach(({ key, className }) => {
+      const cell = document.createElement('td');
+      cell.className = className;
 
-    // Clean up the URL object
-    URL.revokeObjectURL(url);
+      const formattedValue = formatCellValue(key, productData[key]);
 
-    showStatus('File downloaded successfully!', 'success');
+      if (formattedValue.isNA) {
+        cell.textContent = formattedValue.value;
+        cell.classList.add('na-value');
+      } else if (formattedValue.isLink) {
+        const link = document.createElement('a');
+        link.href = formattedValue.value;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'View Product';
+        cell.appendChild(link);
+      } else {
+        cell.textContent = formattedValue.value;
+      }
+
+      row.appendChild(cell);
+    });
+
+    resultsTBody.appendChild(row);
+
+    // Show results section
+    resultsSection.classList.remove('hidden');
+
+    // Scroll to results
+    resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    showStatus(STATUS_MESSAGES.displaying, 'success');
   } catch (error) {
-    console.error('Download error:', error);
-    showStatus('Failed to download file. Please try again.', 'error');
+    console.error('Display error:', error);
+    showStatus('Failed to display results. Please try again.', 'error');
   }
 };
 
@@ -154,6 +205,9 @@ const scrapeProduct = async (url) => {
     showStatus(STATUS_MESSAGES.scraping, 'info');
     showProgress();
 
+    // Hide previous results
+    resultsSection.classList.add('hidden');
+
     // Make API request
     const response = await fetch(
       `${API_CONFIG.baseUrl}${API_CONFIG.scrapeEndpoint}`,
@@ -182,28 +236,18 @@ const scrapeProduct = async (url) => {
       throw new Error(errorMessage);
     }
 
-    // Update status for file generation
+    // Update status for processing
     showStatus(STATUS_MESSAGES.generating, 'info');
 
-    // Get the response as blob (Excel file)
-    const blob = await response.blob();
+    // Get the JSON response
+    const responseData = await response.json();
 
-    // Extract filename from Content-Disposition header or use default
-    const contentDisposition = response.headers.get('Content-Disposition');
-    let filename = 'amazon_product_data.xlsx';
-
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
-      if (filenameMatch) {
-        filename = filenameMatch[1];
-      }
+    if (!responseData.success || !responseData.data) {
+      throw new Error('Invalid response format from server');
     }
 
-    // Update status for download
-    showStatus(STATUS_MESSAGES.downloading, 'success');
-
-    // Trigger download
-    downloadFile(blob, filename);
+    // Display results in table
+    displayResults(responseData.data);
   } catch (error) {
     handleApiError(error);
   } finally {
@@ -273,7 +317,8 @@ urlInput.addEventListener('paste', (event) => {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     validateAmazonUrl,
-    downloadFile,
+    formatCellValue,
+    displayResults,
     handleApiError,
   };
 }
