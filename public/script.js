@@ -5,14 +5,42 @@ const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
 const statusMessage = document.getElementById('status-message');
 const progressBar = document.getElementById('progress-bar');
+const progressFill = document.querySelector('.progress-fill');
 const resultsSection = document.getElementById('results-section');
 const resultsTBody = document.getElementById('results-tbody');
+
+// Progress bar constants to avoid magic numbers
+const PROGRESS_CONFIG = {
+  MIN_VALUE: 0,
+  MAX_VALUE: 100,
+  INITIAL_VALUE: 5,
+  INCREMENT_STEP: 2,
+  FAST_INCREMENT_STEP: 5,
+  COMPLETION_THRESHOLD: 95,
+};
+
+// Progress controller state
+let progressController = {
+  currentValue: PROGRESS_CONFIG.MIN_VALUE,
+  intervalId: null,
+  isComplete: false,
+  startTime: null,
+};
 
 // Configuration constants optimized for Vercel deployment
 const API_CONFIG = {
   baseUrl: window.location.origin,
   scrapeEndpoint: '/api/scrape',
   timeout: 45000, // Increased from 60000 but kept under Vercel's limits
+};
+
+// Timing constants for natural progress animation
+const PROGRESS_TIMING = {
+  UPDATE_INTERVAL: 100, // How often to update progress (ms)
+  SLOW_PHASE_DURATION: 3000, // Duration for slow initial progress (ms)
+  FAST_PHASE_DURATION: 1500, // Duration for faster completion phase (ms)
+  COMPLETION_DISPLAY_TIME: 800, // Time to show 100% before hiding (ms)
+  RESULTS_DELAY: 300, // Delay before showing results after 100% (ms)
 };
 
 const STATUS_MESSAGES = {
@@ -55,12 +83,106 @@ const hideStatus = () => {
   statusMessage.className = 'status-message';
 };
 
-const showProgress = () => {
-  progressBar.classList.remove('hidden');
+const clearProgressInterval = () => {
+  if (progressController.intervalId) {
+    clearInterval(progressController.intervalId);
+    progressController.intervalId = null;
+  }
+};
+
+const resetProgressController = () => {
+  clearProgressInterval();
+  progressController.currentValue = PROGRESS_CONFIG.MIN_VALUE;
+  progressController.isComplete = false;
+  progressController.startTime = null;
+};
+
+const updateProgressDisplay = (percentage) => {
+  if (progressFill) {
+    const clampedValue = Math.min(
+      Math.max(percentage, PROGRESS_CONFIG.MIN_VALUE),
+      PROGRESS_CONFIG.MAX_VALUE
+    );
+    progressFill.style.width = `${clampedValue}%`;
+    progressController.currentValue = clampedValue;
+  }
+};
+
+const startGradualProgress = () => {
+  try {
+    resetProgressController();
+    if (!progressBar || !progressFill) {
+      console.error('Progress bar elements not found');
+      return;
+    }
+
+    progressBar.classList.remove('hidden');
+    progressController.startTime = Date.now();
+
+    updateProgressDisplay(PROGRESS_CONFIG.INITIAL_VALUE);
+    progressController.currentValue = PROGRESS_CONFIG.INITIAL_VALUE;
+
+    progressController.intervalId = setInterval(() => {
+      const elapsed = Date.now() - progressController.startTime;
+      const isSlowPhase = elapsed < PROGRESS_TIMING.SLOW_PHASE_DURATION;
+
+      if (progressController.currentValue >= PROGRESS_CONFIG.MAX_VALUE) {
+        progressController.isComplete = true;
+        clearProgressInterval();
+        return;
+      }
+
+      // Use different increment speeds for natural feeling
+      const increment = isSlowPhase
+        ? PROGRESS_CONFIG.INCREMENT_STEP
+        : PROGRESS_CONFIG.FAST_INCREMENT_STEP;
+
+      // Slow down as we approach completion for natural feel
+      const slowdownFactor =
+        progressController.currentValue > PROGRESS_CONFIG.COMPLETION_THRESHOLD
+          ? 0.5
+          : 1;
+      const actualIncrement = increment * slowdownFactor;
+
+      updateProgressDisplay(progressController.currentValue + actualIncrement);
+    }, PROGRESS_TIMING.UPDATE_INTERVAL);
+  } catch (error) {
+    console.error('Error starting gradual progress:', error);
+  }
+};
+
+const completeProgress = (callback) => {
+  try {
+    // Ensure progress reaches 100%
+    clearProgressInterval();
+    updateProgressDisplay(PROGRESS_CONFIG.MAX_VALUE);
+    progressController.isComplete = true;
+
+    // Show 100% for a moment before executing callback
+    setTimeout(() => {
+      try {
+        if (callback && typeof callback === 'function') {
+          callback();
+        }
+      } catch (error) {
+        console.error('Error executing progress completion callback:', error);
+      }
+    }, PROGRESS_TIMING.RESULTS_DELAY);
+  } catch (error) {
+    console.error('Error completing progress:', error);
+    // Still try to execute callback even if progress completion failed
+    if (callback && typeof callback === 'function') {
+      callback();
+    }
+  }
 };
 
 const hideProgress = () => {
-  progressBar.classList.add('hidden');
+  setTimeout(() => {
+    progressBar.classList.add('hidden');
+    resetProgressController();
+    updateProgressDisplay(PROGRESS_CONFIG.MIN_VALUE);
+  }, PROGRESS_TIMING.COMPLETION_DISPLAY_TIME);
 };
 
 const setButtonState = (isLoading) => {
@@ -209,7 +331,7 @@ const scrapeProduct = async (url) => {
     // Update UI state
     setButtonState(true);
     showStatus(STATUS_MESSAGES.scraping, 'info');
-    showProgress();
+    startGradualProgress();
 
     // Hide previous results
     resultsSection.classList.add('hidden');
@@ -252,9 +374,13 @@ const scrapeProduct = async (url) => {
       throw new Error('Invalid response format from server');
     }
 
-    // Display results in table
-    displayResults(responseData.data);
+    // Complete progress and display results
+    completeProgress(() => {
+      displayResults(responseData.data);
+    });
   } catch (error) {
+    resetProgressController();
+    updateProgressDisplay(PROGRESS_CONFIG.MIN_VALUE);
     handleApiError(error);
   } finally {
     // Reset UI state

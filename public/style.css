@@ -170,20 +170,10 @@ main {
   height: 100%;
   background: linear-gradient(90deg, #667eea, #764ba2);
   width: 0%;
-  animation: progress 3s ease-in-out infinite;
+  transition: width 0.3s ease-in-out;
 }
 
-@keyframes progress {
-  0% {
-    width: 0%;
-  }
-  50% {
-    width: 70%;
-  }
-  100% {
-    width: 100%;
-  }
-}
+/* Removed infinite animation keyframes - progress now controlled by JavaScript */
 
 /* Results section */
 .results-section {
