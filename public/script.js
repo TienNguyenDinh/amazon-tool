@@ -584,16 +584,27 @@ const getCurrentInputMode = () => {
 };
 
 const switchInputMode = (mode) => {
+  const singleOption = singleModeRadio.closest('.radio-option');
+  const multipleOption = multipleModeRadio.closest('.radio-option');
+
   if (mode === INPUT_MODE.SINGLE) {
     singleInputContainer.classList.remove('hidden');
     multipleInputContainer.classList.add('hidden');
     singleModeRadio.checked = true;
     btnText.textContent = 'Scrape Product';
+
+    // Update visual active states
+    singleOption.classList.add('active');
+    multipleOption.classList.remove('active');
   } else {
     singleInputContainer.classList.add('hidden');
     multipleInputContainer.classList.remove('hidden');
     multipleModeRadio.checked = true;
     btnText.textContent = 'Scrape Products';
+
+    // Update visual active states
+    multipleOption.classList.add('active');
+    singleOption.classList.remove('active');
   }
 
   // Clear any existing status messages when switching modes
@@ -669,6 +680,49 @@ multipleModeRadio.addEventListener('change', () => {
     switchInputMode(INPUT_MODE.MULTIPLE);
   }
 });
+
+// Handle radio option click events for better UX
+const singleOption = document
+  .querySelector('#single-mode')
+  .closest('.radio-option');
+const multipleOption = document
+  .querySelector('#multiple-mode')
+  .closest('.radio-option');
+
+singleOption.addEventListener('click', () => {
+  if (!singleModeRadio.checked) {
+    singleModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.SINGLE);
+  }
+});
+
+multipleOption.addEventListener('click', () => {
+  if (!multipleModeRadio.checked) {
+    multipleModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.MULTIPLE);
+  }
+});
+
+// Handle keyboard navigation
+singleOption.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    singleModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.SINGLE);
+  }
+});
+
+multipleOption.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    multipleModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.MULTIPLE);
+  }
+});
+
+// Make radio options focusable for keyboard navigation
+singleOption.setAttribute('tabindex', '0');
+multipleOption.setAttribute('tabindex', '0');
 
 // Clear status when user starts typing
 urlInput.addEventListener('input', () => {
