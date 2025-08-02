@@ -1,12 +1,15 @@
 // DOM elements
 const urlInput = document.getElementById('url-input');
 const urlsTextarea = document.getElementById('urls-textarea');
+const listsTextarea = document.getElementById('lists-textarea');
 const singleModeRadio = document.getElementById('single-mode');
 const multipleModeRadio = document.getElementById('multiple-mode');
+const listsModeRadio = document.getElementById('lists-mode');
 const singleInputContainer = document.getElementById('single-input-container');
 const multipleInputContainer = document.getElementById(
   'multiple-input-container'
 );
+const listsInputContainer = document.getElementById('lists-input-container');
 const scrapeBtn = document.getElementById('scrape-btn');
 const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
@@ -20,11 +23,14 @@ const resultsTBody = document.getElementById('results-tbody');
 const INPUT_MODE = {
   SINGLE: 'single',
   MULTIPLE: 'multiple',
+  LISTS: 'lists',
 };
 
 const URL_LIMITS = {
   MAX_MULTIPLE_URLS: 10,
+  MAX_LISTS_URLS: 5,
   MIN_MULTIPLE_URLS: 1,
+  MIN_LISTS_URLS: 1,
 };
 
 // Progress bar constants to avoid magic numbers
@@ -64,6 +70,7 @@ const PROGRESS_TIMING = {
 const STATUS_MESSAGES = {
   scraping: 'Scraping Amazon product data...',
   scrapingMultiple: 'Scraping multiple Amazon products...',
+  scrapingLists: 'Scraping Amazon product lists...',
   processing: 'Processing URL {current} of {total}...',
   generating: 'Processing extracted data...',
   displaying: 'Success! Displaying product information...',
@@ -71,8 +78,12 @@ const STATUS_MESSAGES = {
   invalidUrl: 'Please enter a valid Amazon product URL',
   invalidUrls:
     'One or more URLs are invalid. Please check your Amazon product URLs.',
+  invalidListUrls:
+    'One or more URLs are invalid. Please check your Amazon list URLs.',
   tooManyUrls: `Please enter no more than ${URL_LIMITS.MAX_MULTIPLE_URLS} URLs`,
+  tooManyListUrls: `Please enter no more than ${URL_LIMITS.MAX_LISTS_URLS} URLs`,
   emptyUrlList: 'Please enter at least one Amazon product URL',
+  emptyListUrlList: 'Please enter at least one Amazon list URL',
   networkError: 'Network error. Please check your connection and try again.',
   timeout:
     'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
@@ -270,6 +281,59 @@ const validateMultipleUrls = (urlsText) => {
     return {
       valid: false,
       message: STATUS_MESSAGES.invalidUrls,
+      details: invalidUrls,
+    };
+  }
+
+  return { valid: true, urls };
+};
+
+const validateListUrls = (urlsText) => {
+  if (!urlsText || urlsText.trim() === '') {
+    return { valid: false, message: STATUS_MESSAGES.emptyListUrlList };
+  }
+
+  // Split by newlines and filter out empty lines
+  const urls = urlsText
+    .split('\n')
+    .map((url) => url.trim())
+    .filter((url) => url.length > 0);
+
+  if (urls.length === 0) {
+    return { valid: false, message: STATUS_MESSAGES.emptyListUrlList };
+  }
+
+  if (urls.length > URL_LIMITS.MAX_LISTS_URLS) {
+    return { valid: false, message: STATUS_MESSAGES.tooManyListUrls };
+  }
+
+  // Validate each URL for Amazon list/search URLs
+  const invalidUrls = [];
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    try {
+      const urlObj = new URL(url);
+      if (!urlObj.hostname.includes('amazon.')) {
+        invalidUrls.push(`Line ${i + 1}: Please enter a valid Amazon URL`);
+      } else if (
+        !urlObj.pathname.includes('/s') &&
+        !urlObj.pathname.includes('/gp/bestsellers') &&
+        !urlObj.pathname.includes('/zgbs') &&
+        !urlObj.search.includes('k=')
+      ) {
+        invalidUrls.push(
+          `Line ${i + 1}: Please enter a valid Amazon search or category URL`
+        );
+      }
+    } catch (error) {
+      invalidUrls.push(`Line ${i + 1}: Please enter a valid URL format`);
+    }
+  }
+
+  if (invalidUrls.length > 0) {
+    return {
+      valid: false,
+      message: STATUS_MESSAGES.invalidListUrls,
       details: invalidUrls,
     };
   }
@@ -580,31 +644,42 @@ const scrapeProduct = async (url) => {
 
 // Input mode management functions
 const getCurrentInputMode = () => {
-  return singleModeRadio.checked ? INPUT_MODE.SINGLE : INPUT_MODE.MULTIPLE;
+  if (singleModeRadio.checked) return INPUT_MODE.SINGLE;
+  if (multipleModeRadio.checked) return INPUT_MODE.MULTIPLE;
+  if (listsModeRadio.checked) return INPUT_MODE.LISTS;
+  return INPUT_MODE.SINGLE; // fallback
 };
 
 const switchInputMode = (mode) => {
   const singleOption = singleModeRadio.closest('.radio-option');
   const multipleOption = multipleModeRadio.closest('.radio-option');
+  const listsOption = listsModeRadio.closest('.radio-option');
+
+  // Hide all containers first
+  singleInputContainer.classList.add('hidden');
+  multipleInputContainer.classList.add('hidden');
+  listsInputContainer.classList.add('hidden');
+
+  // Remove active class from all options
+  singleOption.classList.remove('active');
+  multipleOption.classList.remove('active');
+  listsOption.classList.remove('active');
 
   if (mode === INPUT_MODE.SINGLE) {
     singleInputContainer.classList.remove('hidden');
-    multipleInputContainer.classList.add('hidden');
     singleModeRadio.checked = true;
     btnText.textContent = 'Scrape Product';
-
-    // Update visual active states
     singleOption.classList.add('active');
-    multipleOption.classList.remove('active');
-  } else {
-    singleInputContainer.classList.add('hidden');
+  } else if (mode === INPUT_MODE.MULTIPLE) {
     multipleInputContainer.classList.remove('hidden');
     multipleModeRadio.checked = true;
     btnText.textContent = 'Scrape Products';
-
-    // Update visual active states
     multipleOption.classList.add('active');
-    singleOption.classList.remove('active');
+  } else if (mode === INPUT_MODE.LISTS) {
+    listsInputContainer.classList.remove('hidden');
+    listsModeRadio.checked = true;
+    btnText.textContent = 'Scrape Product Lists';
+    listsOption.classList.add('active');
   }
 
   // Clear any existing status messages when switching modes
@@ -632,7 +707,7 @@ scrapeBtn.addEventListener('click', async () => {
 
     // Start scraping
     await scrapeProduct(url);
-  } else {
+  } else if (inputMode === INPUT_MODE.MULTIPLE) {
     // Handle multiple URLs mode
     const urlsText = urlsTextarea.value.trim();
 
@@ -651,6 +726,25 @@ scrapeBtn.addEventListener('click', async () => {
 
     // Start scraping multiple products
     await scrapeMultipleProducts(validation.urls);
+  } else if (inputMode === INPUT_MODE.LISTS) {
+    // Handle product lists mode
+    const urlsText = listsTextarea.value.trim();
+
+    // Validate URLs
+    const validation = validateListUrls(urlsText);
+    if (!validation.valid) {
+      showStatus(validation.message, 'error');
+      if (validation.details) {
+        console.error('URL validation details:', validation.details);
+      }
+      return;
+    }
+
+    // Clear previous status
+    hideStatus();
+
+    // Start scraping product lists (using same function as multiple products for now)
+    await scrapeMultipleProducts(validation.urls);
   }
 });
 
@@ -662,6 +756,13 @@ urlInput.addEventListener('keypress', (event) => {
 });
 
 urlsTextarea.addEventListener('keypress', (event) => {
+  if (event.key === 'Enter' && event.ctrlKey && !scrapeBtn.disabled) {
+    // Ctrl+Enter to submit in textarea mode
+    scrapeBtn.click();
+  }
+});
+
+listsTextarea.addEventListener('keypress', (event) => {
   if (event.key === 'Enter' && event.ctrlKey && !scrapeBtn.disabled) {
     // Ctrl+Enter to submit in textarea mode
     scrapeBtn.click();
@@ -681,12 +782,21 @@ multipleModeRadio.addEventListener('change', () => {
   }
 });
 
+listsModeRadio.addEventListener('change', () => {
+  if (listsModeRadio.checked) {
+    switchInputMode(INPUT_MODE.LISTS);
+  }
+});
+
 // Handle radio option click events for better UX
 const singleOption = document
   .querySelector('#single-mode')
   .closest('.radio-option');
 const multipleOption = document
   .querySelector('#multiple-mode')
+  .closest('.radio-option');
+const listsOption = document
+  .querySelector('#lists-mode')
   .closest('.radio-option');
 
 singleOption.addEventListener('click', () => {
@@ -700,6 +810,13 @@ multipleOption.addEventListener('click', () => {
   if (!multipleModeRadio.checked) {
     multipleModeRadio.checked = true;
     switchInputMode(INPUT_MODE.MULTIPLE);
+  }
+});
+
+listsOption.addEventListener('click', () => {
+  if (!listsModeRadio.checked) {
+    listsModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.LISTS);
   }
 });
 
@@ -720,9 +837,18 @@ multipleOption.addEventListener('keydown', (event) => {
   }
 });
 
+listsOption.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    listsModeRadio.checked = true;
+    switchInputMode(INPUT_MODE.LISTS);
+  }
+});
+
 // Make radio options focusable for keyboard navigation
 singleOption.setAttribute('tabindex', '0');
 multipleOption.setAttribute('tabindex', '0');
+listsOption.setAttribute('tabindex', '0');
 
 // Clear status when user starts typing
 urlInput.addEventListener('input', () => {
@@ -732,6 +858,12 @@ urlInput.addEventListener('input', () => {
 });
 
 urlsTextarea.addEventListener('input', () => {
+  if (statusMessage.style.display !== 'none') {
+    hideStatus();
+  }
+});
+
+listsTextarea.addEventListener('input', () => {
   if (statusMessage.style.display !== 'none') {
     hideStatus();
   }
@@ -783,6 +915,32 @@ urlsTextarea.addEventListener('paste', (event) => {
 
       if (cleanedText !== pastedValue) {
         urlsTextarea.value = cleanedText;
+      }
+    }
+  }, 0);
+});
+
+listsTextarea.addEventListener('paste', (event) => {
+  setTimeout(() => {
+    const pastedValue = listsTextarea.value;
+    if (pastedValue) {
+      // Clean up URLs in textarea - split by lines and clean each URL
+      const cleanedText = pastedValue
+        .split('\n')
+        .map((line) => {
+          const trimmedLine = line.trim();
+          if (trimmedLine && trimmedLine.includes('amazon.')) {
+            return trimmedLine
+              .replace(/\?ref=.*$/, '') // Remove ref parameters
+              .replace(/&ref=.*$/, '')
+              .replace(/#.*$/, ''); // Remove fragments
+          }
+          return trimmedLine;
+        })
+        .join('\n');
+
+      if (cleanedText !== pastedValue) {
+        listsTextarea.value = cleanedText;
       }
     }
   }, 0);

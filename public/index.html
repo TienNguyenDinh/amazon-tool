@@ -29,7 +29,7 @@
                   id="single-mode"
                   checked
                 />
-                <span class="radio-text">Single Product URL</span>
+                <span class="radio-text">Single Product</span>
               </label>
               <label class="radio-option">
                 <input
@@ -38,7 +38,16 @@
                   value="multiple"
                   id="multiple-mode"
                 />
-                <span class="radio-text">Multiple Product URLs</span>
+                <span class="radio-text">Multiple Products</span>
+              </label>
+              <label class="radio-option">
+                <input
+                  type="radio"
+                  name="input-mode"
+                  value="lists"
+                  id="lists-mode"
+                />
+                <span class="radio-text">Product Lists</span>
               </label>
             </div>
           </div>
@@ -69,6 +78,26 @@ https://www.amazon.com/product3/dp/ASIN3"
             <div class="input-helper">
               <small
                 >Enter one Amazon product URL per line. Up to 10 URLs
+                supported.</small
+              >
+            </div>
+          </div>
+
+          <!-- Product Lists Input -->
+          <div id="lists-input-container" class="input-container hidden">
+            <label for="lists-textarea"
+              >Amazon Category or Search Result URLs (one per line):</label
+            >
+            <textarea
+              id="lists-textarea"
+              placeholder="https://www.amazon.com/s?k=wireless+headphones
+https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics
+https://www.amazon.com/gp/bestsellers/amazon-devices"
+              rows="6"
+            ></textarea>
+            <div class="input-helper">
+              <small
+                >Enter Amazon search results or category URLs. Up to 5 URLs
                 supported.</small
               >
             </div>
@@ -123,10 +152,22 @@ https://www.amazon.com/product3/dp/ASIN3"
             <li>
               <strong>Multiple Products Mode:</strong>
               <ul>
-                <li>Select "Multiple Product URLs" mode</li>
+                <li>Select "Multiple Products" mode</li>
                 <li>Enter one Amazon product URL per line in the text area</li>
                 <li>You can enter up to 10 URLs at once</li>
                 <li>Click "Scrape Products" to extract data from all URLs</li>
+                <li>Use Ctrl+Enter as a shortcut to start scraping</li>
+              </ul>
+            </li>
+            <li>
+              <strong>Product Lists Mode:</strong>
+              <ul>
+                <li>Select "Product Lists" mode</li>
+                <li>Enter Amazon search results or category URLs per line</li>
+                <li>You can enter up to 5 URLs at once</li>
+                <li>
+                  Click "Scrape Product Lists" to extract data from list pages
+                </li>
                 <li>Use Ctrl+Enter as a shortcut to start scraping</li>
               </ul>
             </li>

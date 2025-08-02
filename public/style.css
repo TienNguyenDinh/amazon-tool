@@ -179,7 +179,8 @@ main {
 }
 
 #url-input,
-#urls-textarea {
+#urls-textarea,
+#lists-textarea {
   width: 100%;
   padding: 15px;
   border: 2px solid #e1e5e9;
@@ -190,14 +191,16 @@ main {
   font-family: inherit;
 }
 
-#urls-textarea {
+#urls-textarea,
+#lists-textarea {
   resize: vertical;
   min-height: 120px;
   line-height: 1.5;
 }
 
 #url-input:focus,
-#urls-textarea:focus {
+#urls-textarea:focus,
+#lists-textarea:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
