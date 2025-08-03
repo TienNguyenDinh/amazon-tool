@@ -5,11 +5,6 @@ const listsTextarea = document.getElementById('lists-textarea');
 const singleModeRadio = document.getElementById('single-mode');
 const multipleModeRadio = document.getElementById('multiple-mode');
 const listsModeRadio = document.getElementById('lists-mode');
-const singleInputContainer = document.getElementById('single-input-container');
-const multipleInputContainer = document.getElementById(
-  'multiple-input-container'
-);
-const listsInputContainer = document.getElementById('lists-input-container');
 const scrapeBtn = document.getElementById('scrape-btn');
 const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
@@ -20,6 +15,8 @@ const resultsSection = document.getElementById('results-section');
 const resultsTBody = document.getElementById('results-tbody');
 
 // Configuration constants
+const MAGIC_BUTTON_TEXT = 'Magic Button';
+
 const INPUT_MODE = {
   SINGLE: 'single',
   MULTIPLE: 'multiple',
@@ -228,7 +225,7 @@ const setButtonState = (isLoading) => {
     btnText.textContent = 'Scraping...';
     loadingSpinner.classList.remove('hidden');
   } else {
-    btnText.textContent = 'Scrape Product';
+    btnText.textContent = MAGIC_BUTTON_TEXT;
     loadingSpinner.classList.add('hidden');
   }
 };
@@ -644,6 +641,10 @@ const scrapeProduct = async (url) => {
 
 // Input mode management functions
 const getCurrentInputMode = () => {
+  const singleModeRadio = document.getElementById('single-mode');
+  const multipleModeRadio = document.getElementById('multiple-mode');
+  const listsModeRadio = document.getElementById('lists-mode');
+
   if (singleModeRadio.checked) return INPUT_MODE.SINGLE;
   if (multipleModeRadio.checked) return INPUT_MODE.MULTIPLE;
   if (listsModeRadio.checked) return INPUT_MODE.LISTS;
@@ -651,34 +652,41 @@ const getCurrentInputMode = () => {
 };
 
 const switchInputMode = (mode) => {
+  const singleInputContainer = document.getElementById(
+    'single-input-container'
+  );
+  const multipleInputContainer = document.getElementById(
+    'multiple-input-container'
+  );
+  const listsInputContainer = document.getElementById('lists-input-container');
   const singleOption = singleModeRadio.closest('.radio-option');
   const multipleOption = multipleModeRadio.closest('.radio-option');
   const listsOption = listsModeRadio.closest('.radio-option');
 
-  // Hide all containers first
-  singleInputContainer.classList.add('hidden');
-  multipleInputContainer.classList.add('hidden');
-  listsInputContainer.classList.add('hidden');
-
-  // Remove active class from all options
+  // Remove active class from all options first
   singleOption.classList.remove('active');
   multipleOption.classList.remove('active');
   listsOption.classList.remove('active');
 
+  // Hide all input containers
+  singleInputContainer.classList.add('hidden');
+  multipleInputContainer.classList.add('hidden');
+  listsInputContainer.classList.add('hidden');
+
+  btnText.textContent = MAGIC_BUTTON_TEXT;
+
+  // Set active mode and button text
   if (mode === INPUT_MODE.SINGLE) {
     singleInputContainer.classList.remove('hidden');
     singleModeRadio.checked = true;
-    btnText.textContent = 'Scrape Product';
     singleOption.classList.add('active');
   } else if (mode === INPUT_MODE.MULTIPLE) {
     multipleInputContainer.classList.remove('hidden');
     multipleModeRadio.checked = true;
-    btnText.textContent = 'Scrape Products';
     multipleOption.classList.add('active');
   } else if (mode === INPUT_MODE.LISTS) {
     listsInputContainer.classList.remove('hidden');
     listsModeRadio.checked = true;
-    btnText.textContent = 'Scrape Product Lists';
     listsOption.classList.add('active');
   }
 
