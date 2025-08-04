@@ -688,31 +688,99 @@ document.addEventListener('DOMContentLoaded', () => {
   amazonUrlsTextarea.focus();
 });
 
-// Handle paste events to automatically clean URLs in unified input
+// URL detection constants for paste handling
+const URL_VALIDATION = {
+  URL_PATTERN: /https?:\/\/[^\s]+/g,
+  AMAZON_PATTERN: /amazon\./i,
+};
+
+// Handle paste events to automatically clean URLs and add new lines in unified input
 amazonUrlsTextarea.addEventListener('paste', (event) => {
-  setTimeout(() => {
-    const pastedValue = amazonUrlsTextarea.value;
-    if (pastedValue) {
-      // Clean up URLs in textarea - split by lines and clean each URL
-      const cleanedText = pastedValue
-        .split('\n')
-        .map((line) => {
-          const trimmedLine = line.trim();
-          if (trimmedLine && trimmedLine.includes('amazon.')) {
-            return trimmedLine
+  // Prevent the default paste behavior
+  event.preventDefault();
+
+  // Get the pasted content from clipboard
+  const pastedText = (event.clipboardData || window.clipboardData).getData(
+    'text'
+  );
+
+  if (pastedText && pastedText.trim()) {
+    const currentValue = amazonUrlsTextarea.value;
+    const currentCursorPosition = amazonUrlsTextarea.selectionStart;
+    const currentCursorEnd = amazonUrlsTextarea.selectionEnd;
+
+    // Check if the pasted text contains a URL
+    const urls = pastedText.match(URL_VALIDATION.URL_PATTERN);
+    const containsAmazonUrl =
+      urls && urls.some((url) => URL_VALIDATION.AMAZON_PATTERN.test(url));
+
+    let processedText = pastedText;
+    let shouldAddNewLine = false;
+
+    if (containsAmazonUrl) {
+      // Clean up URLs and determine if we should add a new line
+      processedText = pastedText
+        .split(/\s+/)
+        .map((text) => {
+          const trimmedText = text.trim();
+          if (
+            trimmedText &&
+            URL_VALIDATION.URL_PATTERN.test(trimmedText) &&
+            URL_VALIDATION.AMAZON_PATTERN.test(trimmedText)
+          ) {
+            shouldAddNewLine = true;
+            return trimmedText
               .replace(/\?ref=.*$/, '') // Remove ref parameters
               .replace(/&ref=.*$/, '')
               .replace(/#.*$/, ''); // Remove fragments
           }
-          return trimmedLine;
+          return trimmedText;
         })
-        .join('\n');
-
-      if (cleanedText !== pastedValue) {
-        amazonUrlsTextarea.value = cleanedText;
-      }
+        .filter((text) => text.length > 0)
+        .join(' ');
     }
-  }, 0);
+
+    // Insert the processed text at cursor position
+    const textBeforeCursor = currentValue.substring(0, currentCursorPosition);
+    const textAfterCursor = currentValue.substring(currentCursorEnd);
+
+    let newValue;
+    let newCursorPosition;
+
+    if (shouldAddNewLine && containsAmazonUrl) {
+      // Add new line after the pasted URL if it's an Amazon URL
+      const needsNewLineAfter =
+        textAfterCursor.length > 0 && !textAfterCursor.startsWith('\n');
+      const needsNewLineBefore =
+        textBeforeCursor.length > 0 && !textBeforeCursor.endsWith('\n');
+
+      const beforeNewLine = needsNewLineBefore ? '\n' : '';
+      const afterNewLine = needsNewLineAfter ? '\n' : '';
+
+      newValue =
+        textBeforeCursor +
+        beforeNewLine +
+        processedText +
+        afterNewLine +
+        textAfterCursor;
+      newCursorPosition =
+        textBeforeCursor.length +
+        beforeNewLine.length +
+        processedText.length +
+        afterNewLine.length;
+    } else {
+      // Normal paste without new line handling
+      newValue = textBeforeCursor + processedText + textAfterCursor;
+      newCursorPosition = textBeforeCursor.length + processedText.length;
+    }
+
+    // Update the textarea value and cursor position
+    amazonUrlsTextarea.value = newValue;
+    amazonUrlsTextarea.setSelectionRange(newCursorPosition, newCursorPosition);
+
+    // Trigger input event to clear any status messages
+    amazonUrlsTextarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 });
 
 // Export for testing purposes (if needed)
