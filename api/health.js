@@ -22,5 +22,6 @@ module.exports = async (req, res) => {
     timestamp: new Date().toISOString(),
     environment: 'Vercel',
     service: 'Amazon Product Scraper',
+    version: '2.1.0-store-working',
   });
 };

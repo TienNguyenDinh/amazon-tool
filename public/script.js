@@ -40,7 +40,7 @@ const URL_PATTERNS = {
     /\/Best-Sellers-/,
     /\/gp\/top-sellers/,
   ],
-  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/],
+  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
 };
 
 // Progress bar constants to avoid magic numbers
@@ -93,6 +93,8 @@ const STATUS_MESSAGES = {
   timeout:
     'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
   captcha: 'Amazon detected automated access. Please try again later.',
+  rateLimit:
+    'Amazon rate limit exceeded. Please wait a few minutes before trying again.',
   serverError: 'Server error occurred. Please try again.',
   serviceUnavailable:
     'Service temporarily unavailable. Please try again in a moment.',
@@ -662,7 +664,7 @@ const handleApiError = (error, response = null) => {
         showStatus(STATUS_MESSAGES.extractionError, 'error');
         break;
       case 429:
-        showStatus(STATUS_MESSAGES.captcha, 'warning');
+        showStatus(STATUS_MESSAGES.rateLimit, 'warning');
         break;
       case 500:
         showStatus(STATUS_MESSAGES.serverError, 'error');

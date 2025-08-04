@@ -100,22 +100,59 @@ const CSS_SELECTORS = {
     },
     store: {
       productContainers: [
+        // Based on diagnostic test - most effective selectors first
+        '[class*="item"]', // Found 247 elements
+        '[class*="card"]', // Found 85 elements
+        '[data-csa-c-type="widget"]', // Found 12 elements
+        '[class*="product"]', // Found 11 elements
+        '.celwidget', // Found 7 elements
+        '.octopus-pc-card', // Found 2 elements
+        '.a-cardui', // Found 2 elements
+
+        // Original selectors as fallbacks
         '[data-card-identifier]',
+        '[data-testid*="product"]',
+        '[data-testid*="card"]',
         '.s-widget-container',
         '.s-result-item',
-        '.octopus-pc-card',
+        '[class*="ProductCard"]',
+        '[class*="product-card"]',
+        '[data-component-type*="product"]',
       ],
       productLinks: [
+        // Direct product links (most reliable)
         'a[href*="/dp/"]',
         '.a-link-normal[href*="/dp/"]',
         'a[href*="/gp/product/"]',
+
+        // Contextual product links
+        '[class*="item"] a[href*="/dp/"]',
+        '[class*="card"] a[href*="/dp/"]',
+        '[class*="product"] a[href*="/dp/"]',
+        '.celwidget a[href*="/dp/"]',
+        '[data-testid*="product"] a[href*="/dp/"]',
+        '[class*="ProductCard"] a[href*="/dp/"]',
       ],
       listTitle: [
         '.octopus-pc-card-content h3',
         '.a-size-base-plus',
         '.s-truncate',
+        '[data-testid*="title"]',
+        '[class*="ProductCard"] h3',
+        '.a-size-mini',
+        '.a-link-normal span',
+        '[class*="item"] h3',
+        '[class*="card"] h3',
+        'h2',
+        'h3', // Simple heading selectors
       ],
-      listPrice: ['.a-price .a-offscreen', '.a-text-price .a-offscreen'],
+      listPrice: [
+        '.a-price .a-offscreen',
+        '.a-text-price .a-offscreen',
+        '[data-testid*="price"]',
+        '.a-price-whole',
+        '[class*="price"]',
+      ],
     },
   },
 };
@@ -281,7 +318,10 @@ const makeHttpRequest = (url, options = {}) => {
       if (res.statusCode !== 200) {
         let errorMessage = `HTTP ${res.statusCode}: ${res.statusMessage}`;
         // Provide more specific error messages for common issues
-        if (res.statusCode === 503) {
+        if (res.statusCode === 429) {
+          errorMessage =
+            'Amazon rate limit exceeded - too many requests. Please wait a few minutes before trying again or reduce request frequency';
+        } else if (res.statusCode === 503) {
           errorMessage =
             'Amazon service temporarily unavailable - possible rate limiting or bot detection';
         } else if (res.statusCode === 403) {
@@ -553,6 +593,28 @@ const extractProductLinksFromList = ($, urlType) => {
 
   if (containers.length === 0) {
     log('No product containers found on list page', 'WARN');
+    log(`URL type: ${urlType}`, 'DEBUG');
+    log(`Tried selectors: ${selectors.productContainers.join(', ')}`, 'DEBUG');
+
+    // For debugging: log some common elements found on the page
+    const commonElements = [
+      '[data-testid]',
+      '[class*="card"]',
+      '[class*="product"]',
+      '[class*="item"]',
+      'a[href*="/dp/"]',
+    ];
+
+    commonElements.forEach((selector) => {
+      const found = $(selector);
+      if (found.length > 0) {
+        log(
+          `Found ${found.length} elements with selector: ${selector}`,
+          'DEBUG'
+        );
+      }
+    });
+
     return productLinks;
   }
 
@@ -585,6 +647,28 @@ const extractProductLinksFromList = ($, urlType) => {
         });
       }
     });
+
+  // If no links found in containers, try direct link search on the entire page
+  if (productLinks.length === 0) {
+    log('No links found in containers, trying direct page search', 'WARN');
+
+    $('a[href*="/dp/"]').each((index, element) => {
+      if (index >= LIST_PROCESSING_CONFIG.maxProductsPerList) return false;
+
+      const href = $(element).attr('href');
+      if (href) {
+        const productUrl = href.startsWith('http')
+          ? href
+          : `https://www.amazon.com${href}`;
+
+        productLinks.push({
+          url: productUrl,
+          containerIndex: index,
+          source: 'direct-search',
+        });
+      }
+    });
+  }
 
   log(`Extracted ${productLinks.length} product links from list page`);
   return productLinks;
@@ -667,7 +751,17 @@ const processListPage = async (html, url) => {
   const productLinks = extractProductLinksFromList($, urlType);
 
   if (productLinks.length === 0) {
-    throw new Error('No products found on the list page');
+    const errorDetails = `No products found on ${urlType} page. URL: ${url}`;
+    log(errorDetails, 'ERROR');
+
+    // Provide more specific error message for store pages
+    if (urlType === 'store') {
+      throw new Error(
+        'No products found on store page. This store page may not contain product listings, may be using a different layout, or may require authentication to view products.'
+      );
+    } else {
+      throw new Error(`No products found on the ${urlType} page`);
+    }
   }
 
   const products = [];
@@ -887,16 +981,47 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       if (detectedPattern) {
         log(`Bot detection pattern found: ${detectedPattern}`, 'WARN');
         log('Continuing with data extraction despite bot detection...', 'INFO');
+
+        // For store pages, robot detection doesn't always mean complete failure
+        if (urlType === URL_TYPES.STORE) {
+          log(
+            'Store page with robot detection - will attempt extraction anyway',
+            'INFO'
+          );
+        }
       }
 
       // Process based on URL type
       if (isListPage) {
         log('Processing as list page');
-        const products = await processListPage(html, url);
-        log(
-          `Scraping completed successfully - extracted ${products.length} products from list`
-        );
-        return products;
+        try {
+          const products = await processListPage(html, url);
+          log(
+            `Scraping completed successfully - extracted ${products.length} products from list`
+          );
+          return products;
+        } catch (listError) {
+          // If list page processing fails for store pages, try as individual page
+          if (urlType === URL_TYPES.STORE) {
+            log(
+              'List page processing failed for store, trying as individual page',
+              'WARN'
+            );
+            log(`List error: ${listError.message}`, 'DEBUG');
+
+            const productData = extractProductData(html, url);
+
+            // For store pages, be more lenient with validation
+            if (
+              productData.title !== DEFAULT_VALUES.notAvailable &&
+              productData.title !== DEFAULT_VALUES.extractionFailed
+            ) {
+              log('Successfully extracted store page as individual page');
+              return productData;
+            }
+          }
+          throw listError;
+        }
       } else {
         log('Processing as individual product page');
         // Extract product data from HTML
@@ -924,6 +1049,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       if (
         error.message.includes('Invalid Amazon URL') ||
         error.message.includes('bot detection') ||
+        error.message.includes('rate limit exceeded') ||
         error.message.includes('HTTP 4')
       ) {
         break;
@@ -961,6 +1087,10 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
     throw new Error(
       'Amazon detected automated access. Please wait a few minutes and try again.'
     );
+  } else if (lastError.message.includes('rate limit exceeded')) {
+    throw new Error(
+      'Amazon rate limit exceeded. Please wait a few minutes before making additional requests.'
+    );
   } else if (
     lastError.message.includes('HTTP 4') ||
     lastError.message.includes('HTTP 5')
@@ -976,6 +1106,9 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
 
   throw lastError;
 };
+
+// Version identifier for debugging
+const SCRAPER_VERSION = '2.1.0-store-working';
 
 // API handler with proper error handling
 module.exports = async (req, res) => {
@@ -1007,6 +1140,7 @@ module.exports = async (req, res) => {
     }
 
     log(`API request received for: ${url}`);
+    log(`Scraper version: ${SCRAPER_VERSION}`);
 
     // Scrape product data
     const productData = await scrapeAmazonProduct(url);
