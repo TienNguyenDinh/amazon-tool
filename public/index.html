@@ -17,88 +17,28 @@
 
       <main>
         <div class="input-section">
-          <!-- Input Mode Toggle -->
-          <div class="input-mode-toggle">
-            <div class="radio-group">
-              <label class="radio-option">
-                <input
-                  type="radio"
-                  name="input-mode"
-                  value="single"
-                  id="single-mode"
-                  checked
-                />
-                <span class="radio-text">Single Product</span>
-              </label>
-              <label class="radio-option">
-                <input
-                  type="radio"
-                  name="input-mode"
-                  value="multiple"
-                  id="multiple-mode"
-                />
-                <span class="radio-text">Multiple Products</span>
-              </label>
-              <label class="radio-option">
-                <input
-                  type="radio"
-                  name="input-mode"
-                  value="lists"
-                  id="lists-mode"
-                />
-                <span class="radio-text">Product Lists</span>
-              </label>
-            </div>
-          </div>
+          <!-- Unified URL Input -->
+          <div id="unified-input-container" class="input-container">
+            <label for="amazon-urls-textarea">Amazon URLs:</label>
+            <textarea
+              id="amazon-urls-textarea"
+              placeholder="Enter Amazon URLs (one per line):
 
-          <!-- Single URL Input -->
-          <div id="single-input-container" class="input-container">
-            <label for="url-input">Amazon Product URL:</label>
-            <input
-              type="url"
-              id="url-input"
-              placeholder="https://www.amazon.com/product-name/dp/ASIN"
+• Product URLs: https://www.amazon.com/product-name/dp/ASIN
+• Search URLs: https://www.amazon.com/s?k=search-term
+• Category URLs: https://www.amazon.com/Best-Sellers-Category/zgbs/category
+• Store URLs: https://www.amazon.com/stores/brand-name
+
+Single URL or multiple URLs supported - the tool will automatically detect the type."
+              rows="8"
               required
-            />
-          </div>
-
-          <!-- Multiple URLs Input -->
-          <div id="multiple-input-container" class="input-container hidden">
-            <label for="urls-textarea"
-              >Amazon Product URLs (one per line):</label
-            >
-            <textarea
-              id="urls-textarea"
-              placeholder="https://www.amazon.com/product1/dp/ASIN1
-https://www.amazon.com/product2/dp/ASIN2
-https://www.amazon.com/product3/dp/ASIN3"
-              rows="6"
             ></textarea>
             <div class="input-helper">
-              <small
-                >Enter one Amazon product URL per line. Up to 10 URLs
-                supported.</small
-              >
-            </div>
-          </div>
-
-          <!-- Product Lists Input -->
-          <div id="lists-input-container" class="input-container hidden">
-            <label for="lists-textarea"
-              >Amazon Category or Search Result URLs (one per line):</label
-            >
-            <textarea
-              id="lists-textarea"
-              placeholder="https://www.amazon.com/s?k=wireless+headphones
-https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics
-https://www.amazon.com/gp/bestsellers/amazon-devices"
-              rows="6"
-            ></textarea>
-            <div class="input-helper">
-              <small
-                >Enter Amazon search results or category URLs. Up to 5 URLs
-                supported.</small
-              >
+              <small>
+                Paste any Amazon URLs - product pages, search results,
+                categories, or store pages. The tool automatically detects URL
+                types and processes them appropriately. Up to 15 URLs supported.
+              </small>
             </div>
           </div>
 
@@ -140,46 +80,52 @@ https://www.amazon.com/gp/bestsellers/amazon-devices"
           <h3>How to use:</h3>
           <ol>
             <li>
-              <strong>Single Product Mode:</strong>
+              <strong>Paste Amazon URLs:</strong>
               <ul>
-                <li>Select "Single Product URL" mode</li>
-                <li>Copy an Amazon product URL from your browser</li>
-                <li>Paste it into the input field</li>
-                <li>Click "Magic Button" to extract data</li>
+                <li>Copy any Amazon URL from your browser</li>
+                <li>
+                  Paste into the text area (single URL or multiple URLs, one per
+                  line)
+                </li>
+                <li>The tool automatically detects URL types</li>
               </ul>
             </li>
             <li>
-              <strong>Multiple Products Mode:</strong>
+              <strong>Supported URL Types:</strong>
               <ul>
-                <li>Select "Multiple Products" mode</li>
-                <li>Enter one Amazon product URL per line in the text area</li>
-                <li>You can enter up to 10 URLs at once</li>
-                <li>Click "Magic Button" to extract data from all URLs</li>
-                <li>Use Ctrl+Enter as a shortcut to start scraping</li>
+                <li>
+                  <strong>Product URLs:</strong> Individual product pages (e.g.,
+                  /dp/ASIN)
+                </li>
+                <li>
+                  <strong>Search URLs:</strong> Search results pages (e.g.,
+                  /s?k=keyword)
+                </li>
+                <li>
+                  <strong>Category URLs:</strong> Best sellers, category pages
+                  (e.g., /zgbs/)
+                </li>
+                <li>
+                  <strong>Store URLs:</strong> Brand stores and shop pages
+                </li>
               </ul>
             </li>
             <li>
-              <strong>Product Lists Mode:</strong>
+              <strong>Processing:</strong>
               <ul>
-                <li>Select "Product Lists" mode</li>
-                <li>Enter Amazon search results or category URLs per line</li>
-                <li>You can enter up to 5 URLs at once</li>
-                <li>Click "Magic Button" to extract data from list pages</li>
-                <li>Use Ctrl+Enter as a shortcut to start scraping</li>
+                <li>Click "Magic Button" to start extraction</li>
+                <li>Use Ctrl+Enter as a keyboard shortcut</li>
+                <li>The tool processes each URL with appropriate logic</li>
+                <li>Results are displayed in the table below</li>
               </ul>
-            </li>
-            <li>
-              <strong
-                >View the extracted data in the professional table below</strong
-              >
             </li>
           </ol>
 
           <div class="warning">
             <strong>Note:</strong> This tool respects Amazon's servers by adding
-            delays between requests. Scraping may take 10-30 seconds per product
-            depending on the page complexity. Multiple products are processed
-            sequentially.
+            delays between requests. Processing time varies: 5-15 seconds per
+            product URL, 15-30 seconds per search/category URL depending on
+            complexity. URLs are processed sequentially for best results.
           </div>
         </div>
       </main>

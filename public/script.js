@@ -1,10 +1,5 @@
 // DOM elements
-const urlInput = document.getElementById('url-input');
-const urlsTextarea = document.getElementById('urls-textarea');
-const listsTextarea = document.getElementById('lists-textarea');
-const singleModeRadio = document.getElementById('single-mode');
-const multipleModeRadio = document.getElementById('multiple-mode');
-const listsModeRadio = document.getElementById('lists-mode');
+const amazonUrlsTextarea = document.getElementById('amazon-urls-textarea');
 const scrapeBtn = document.getElementById('scrape-btn');
 const btnText = document.getElementById('btn-text');
 const loadingSpinner = document.getElementById('loading-spinner');
@@ -17,17 +12,35 @@ const resultsTBody = document.getElementById('results-tbody');
 // Configuration constants
 const MAGIC_BUTTON_TEXT = 'Magic Button';
 
-const INPUT_MODE = {
-  SINGLE: 'single',
-  MULTIPLE: 'multiple',
-  LISTS: 'lists',
+// URL type detection constants
+const URL_TYPE = {
+  PRODUCT: 'product',
+  SEARCH: 'search',
+  CATEGORY: 'category',
+  STORE: 'store',
+  UNKNOWN: 'unknown',
 };
 
 const URL_LIMITS = {
-  MAX_MULTIPLE_URLS: 10,
-  MAX_LISTS_URLS: 5,
-  MIN_MULTIPLE_URLS: 1,
-  MIN_LISTS_URLS: 1,
+  MAX_TOTAL_URLS: 15,
+  MIN_URLS: 1,
+};
+
+// URL pattern detection
+const URL_PATTERNS = {
+  PRODUCT: [
+    /\/dp\/[A-Z0-9]{10}/,
+    /\/gp\/product\/[A-Z0-9]{10}/,
+    /\/product\/[A-Z0-9]{10}/,
+  ],
+  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/],
+  CATEGORY: [
+    /\/gp\/bestsellers/,
+    /\/zgbs\//,
+    /\/Best-Sellers-/,
+    /\/gp\/top-sellers/,
+  ],
+  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/],
 };
 
 // Progress bar constants to avoid magic numbers
@@ -65,22 +78,16 @@ const PROGRESS_TIMING = {
 };
 
 const STATUS_MESSAGES = {
-  scraping: 'Scraping Amazon product data...',
-  scrapingMultiple: 'Scraping multiple Amazon products...',
-  scrapingLists: 'Scraping Amazon product lists...',
-  processing: 'Processing URL {current} of {total}...',
+  scraping: 'Processing Amazon URLs...',
+  scrapingProduct: 'Scraping Amazon product data...',
+  scrapingSearch: 'Processing Amazon search results...',
+  scrapingCategory: 'Processing Amazon category page...',
+  scrapingStore: 'Processing Amazon store page...',
+  processing: 'Processing URL {current} of {total} ({type})...',
   generating: 'Processing extracted data...',
   displaying: 'Success! Displaying product information...',
   error: 'Error occurred while scraping',
-  invalidUrl: 'Please enter a valid Amazon product URL',
-  invalidUrls:
-    'One or more URLs are invalid. Please check your Amazon product URLs.',
-  invalidListUrls:
-    'One or more URLs are invalid. Please check your Amazon list URLs.',
-  tooManyUrls: `Please enter no more than ${URL_LIMITS.MAX_MULTIPLE_URLS} URLs`,
-  tooManyListUrls: `Please enter no more than ${URL_LIMITS.MAX_LISTS_URLS} URLs`,
-  emptyUrlList: 'Please enter at least one Amazon product URL',
-  emptyListUrlList: 'Please enter at least one Amazon list URL',
+  invalidUrl: 'Please enter a valid Amazon URL',
   networkError: 'Network error. Please check your connection and try again.',
   timeout:
     'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
@@ -90,9 +97,9 @@ const STATUS_MESSAGES = {
     'Service temporarily unavailable. Please try again in a moment.',
   browserError: 'Browser initialization failed. Please try again.',
   extractionError:
-    'Could not extract product data. Please verify this is a valid Amazon product page.',
-  partialSuccess:
-    'Some products could not be scraped. Check individual results.',
+    'Could not extract product data. Please verify this is a valid Amazon page.',
+  partialSuccess: 'Some URLs could not be processed. Check individual results.',
+  urlTypesDetected: 'Detected URL types: {summary}',
 };
 
 // Column display configuration with order and CSS classes
@@ -230,6 +237,42 @@ const setButtonState = (isLoading) => {
   }
 };
 
+// Detect Amazon URL type based on patterns
+const detectUrlType = (url) => {
+  if (!url || url.trim() === '') {
+    return URL_TYPE.UNKNOWN;
+  }
+
+  const cleanUrl = url.trim();
+
+  // Check each URL type pattern
+  for (const pattern of URL_PATTERNS.PRODUCT) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPE.PRODUCT;
+    }
+  }
+
+  for (const pattern of URL_PATTERNS.SEARCH) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPE.SEARCH;
+    }
+  }
+
+  for (const pattern of URL_PATTERNS.CATEGORY) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPE.CATEGORY;
+    }
+  }
+
+  for (const pattern of URL_PATTERNS.STORE) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPE.STORE;
+    }
+  }
+
+  return URL_TYPE.UNKNOWN;
+};
+
 const validateAmazonUrl = (url) => {
   if (!url || url.trim() === '') {
     return { valid: false, message: 'URL is required' };
@@ -240,15 +283,17 @@ const validateAmazonUrl = (url) => {
     if (!urlObj.hostname.includes('amazon.')) {
       return { valid: false, message: 'Please enter a valid Amazon URL' };
     }
-    return { valid: true };
+
+    const urlType = detectUrlType(url);
+    return { valid: true, urlType };
   } catch (error) {
     return { valid: false, message: 'Please enter a valid URL format' };
   }
 };
 
-const validateMultipleUrls = (urlsText) => {
+const validateUnifiedUrls = (urlsText) => {
   if (!urlsText || urlsText.trim() === '') {
-    return { valid: false, message: STATUS_MESSAGES.emptyUrlList };
+    return { valid: false, message: 'Please enter at least one Amazon URL' };
   }
 
   // Split by newlines and filter out empty lines
@@ -258,84 +303,63 @@ const validateMultipleUrls = (urlsText) => {
     .filter((url) => url.length > 0);
 
   if (urls.length === 0) {
-    return { valid: false, message: STATUS_MESSAGES.emptyUrlList };
+    return { valid: false, message: 'Please enter at least one Amazon URL' };
   }
 
-  if (urls.length > URL_LIMITS.MAX_MULTIPLE_URLS) {
-    return { valid: false, message: STATUS_MESSAGES.tooManyUrls };
-  }
-
-  // Validate each URL
-  const invalidUrls = [];
-  for (let i = 0; i < urls.length; i++) {
-    const validation = validateAmazonUrl(urls[i]);
-    if (!validation.valid) {
-      invalidUrls.push(`Line ${i + 1}: ${validation.message}`);
-    }
-  }
-
-  if (invalidUrls.length > 0) {
+  if (urls.length > URL_LIMITS.MAX_TOTAL_URLS) {
     return {
       valid: false,
-      message: STATUS_MESSAGES.invalidUrls,
-      details: invalidUrls,
+      message: `Please enter no more than ${URL_LIMITS.MAX_TOTAL_URLS} URLs`,
     };
   }
 
-  return { valid: true, urls };
-};
-
-const validateListUrls = (urlsText) => {
-  if (!urlsText || urlsText.trim() === '') {
-    return { valid: false, message: STATUS_MESSAGES.emptyListUrlList };
-  }
-
-  // Split by newlines and filter out empty lines
-  const urls = urlsText
-    .split('\n')
-    .map((url) => url.trim())
-    .filter((url) => url.length > 0);
-
-  if (urls.length === 0) {
-    return { valid: false, message: STATUS_MESSAGES.emptyListUrlList };
-  }
-
-  if (urls.length > URL_LIMITS.MAX_LISTS_URLS) {
-    return { valid: false, message: STATUS_MESSAGES.tooManyListUrls };
-  }
-
-  // Validate each URL for Amazon list/search URLs
+  // Validate each URL and collect type information
   const invalidUrls = [];
+  const validUrls = [];
+  const urlTypeCount = {
+    [URL_TYPE.PRODUCT]: 0,
+    [URL_TYPE.SEARCH]: 0,
+    [URL_TYPE.CATEGORY]: 0,
+    [URL_TYPE.STORE]: 0,
+    [URL_TYPE.UNKNOWN]: 0,
+  };
+
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
-    try {
-      const urlObj = new URL(url);
-      if (!urlObj.hostname.includes('amazon.')) {
-        invalidUrls.push(`Line ${i + 1}: Please enter a valid Amazon URL`);
-      } else if (
-        !urlObj.pathname.includes('/s') &&
-        !urlObj.pathname.includes('/gp/bestsellers') &&
-        !urlObj.pathname.includes('/zgbs') &&
-        !urlObj.search.includes('k=')
-      ) {
-        invalidUrls.push(
-          `Line ${i + 1}: Please enter a valid Amazon search or category URL`
-        );
-      }
-    } catch (error) {
-      invalidUrls.push(`Line ${i + 1}: Please enter a valid URL format`);
+    const validation = validateAmazonUrl(url);
+
+    if (!validation.valid) {
+      invalidUrls.push(`Line ${i + 1}: ${validation.message}`);
+    } else {
+      validUrls.push({
+        url: url,
+        type: validation.urlType,
+        index: i + 1,
+      });
+      urlTypeCount[validation.urlType]++;
     }
   }
 
   if (invalidUrls.length > 0) {
     return {
       valid: false,
-      message: STATUS_MESSAGES.invalidListUrls,
+      message: 'One or more URLs are invalid. Please check your Amazon URLs.',
       details: invalidUrls,
     };
   }
 
-  return { valid: true, urls };
+  return {
+    valid: true,
+    urls: validUrls,
+    typeCount: urlTypeCount,
+    summary: `Found ${validUrls.length} valid URLs: ${
+      urlTypeCount[URL_TYPE.PRODUCT]
+    } products, ${urlTypeCount[URL_TYPE.SEARCH]} searches, ${
+      urlTypeCount[URL_TYPE.CATEGORY]
+    } categories, ${urlTypeCount[URL_TYPE.STORE]} stores, ${
+      urlTypeCount[URL_TYPE.UNKNOWN]
+    } other`,
+  };
 };
 
 const formatCellValue = (key, value) => {
@@ -446,31 +470,61 @@ const displayResults = (productDataArray) => {
   }
 };
 
-const scrapeMultipleProducts = async (urls) => {
+const processUnifiedUrls = async (urlData) => {
   try {
     // Update UI state
     setButtonState(true);
-    showStatus(STATUS_MESSAGES.scrapingMultiple, 'info');
+    showStatus(STATUS_MESSAGES.scraping, 'info');
     startGradualProgress();
+
+    // Show detected URL types
+    if (urlData.summary) {
+      showStatus(
+        STATUS_MESSAGES.urlTypesDetected.replace('{summary}', urlData.summary),
+        'info'
+      );
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // Show for 2 seconds
+    }
 
     // Hide previous results
     resultsSection.classList.add('hidden');
 
     const results = [];
-    const totalUrls = urls.length;
+    const totalUrls = urlData.urls.length;
 
     // Process URLs sequentially to avoid overwhelming the server
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i];
+    for (let i = 0; i < urlData.urls.length; i++) {
+      const urlItem = urlData.urls[i];
+      const { url, type } = urlItem;
 
-      // Update status to show current progress
+      // Get appropriate status message based on URL type
+      let typeSpecificMessage;
+      switch (type) {
+        case URL_TYPE.PRODUCT:
+          typeSpecificMessage = STATUS_MESSAGES.scrapingProduct;
+          break;
+        case URL_TYPE.SEARCH:
+          typeSpecificMessage = STATUS_MESSAGES.scrapingSearch;
+          break;
+        case URL_TYPE.CATEGORY:
+          typeSpecificMessage = STATUS_MESSAGES.scrapingCategory;
+          break;
+        case URL_TYPE.STORE:
+          typeSpecificMessage = STATUS_MESSAGES.scrapingStore;
+          break;
+        default:
+          typeSpecificMessage = STATUS_MESSAGES.scraping;
+      }
+
+      // Update status to show current progress with type
       const progressMessage = STATUS_MESSAGES.processing
         .replace('{current}', i + 1)
-        .replace('{total}', totalUrls);
+        .replace('{total}', totalUrls)
+        .replace('{type}', type);
       showStatus(progressMessage, 'info');
 
       try {
-        // Make API request for single URL
+        // Make API request for single URL (the backend API remains the same)
         const response = await fetch(
           `${API_CONFIG.baseUrl}${API_CONFIG.scrapeEndpoint}`,
           {
@@ -485,9 +539,20 @@ const scrapeMultipleProducts = async (urls) => {
         if (response.ok) {
           const responseData = await response.json();
           if (responseData.success && responseData.data) {
-            results.push(responseData.data);
+            // Add URL type information to result
+            const enrichedData = {
+              ...responseData.data,
+              urlType: type,
+              originalIndex: urlItem.index,
+            };
+            results.push(enrichedData);
           } else {
-            results.push({ error: 'Invalid response format', url });
+            results.push({
+              error: 'Invalid response format',
+              url,
+              urlType: type,
+              originalIndex: urlItem.index,
+            });
           }
         } else {
           // Handle HTTP error
@@ -498,16 +563,28 @@ const scrapeMultipleProducts = async (urls) => {
           } catch (e) {
             // Use default error message
           }
-          results.push({ error: errorMessage, url });
+          results.push({
+            error: errorMessage,
+            url,
+            urlType: type,
+            originalIndex: urlItem.index,
+          });
         }
       } catch (error) {
-        console.error(`Error scraping ${url}:`, error);
-        results.push({ error: error.message || 'Network error', url });
+        console.error(`Error processing ${url}:`, error);
+        results.push({
+          error: error.message || 'Network error',
+          url,
+          urlType: type,
+          originalIndex: urlItem.index,
+        });
       }
 
-      // Add small delay between requests to be respectful to the server
-      if (i < urls.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
+      // Add delay between requests based on URL type (search/category may need longer delays)
+      if (i < urlData.urls.length - 1) {
+        const delay =
+          type === URL_TYPE.SEARCH || type === URL_TYPE.CATEGORY ? 2500 : 1500;
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -568,343 +645,53 @@ const handleApiError = (error, response = null) => {
   }
 };
 
-const scrapeProduct = async (url) => {
-  // Create abort controller for timeout
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(
-    () => abortController.abort(),
-    API_CONFIG.timeout
-  );
-
-  try {
-    // Update UI state
-    setButtonState(true);
-    showStatus(STATUS_MESSAGES.scraping, 'info');
-    startGradualProgress();
-
-    // Hide previous results
-    resultsSection.classList.add('hidden');
-
-    // Make API request
-    const response = await fetch(
-      `${API_CONFIG.baseUrl}${API_CONFIG.scrapeEndpoint}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url }),
-        signal: abortController.signal,
-      }
-    );
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      // Handle error responses
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (jsonError) {
-        console.error('Failed to parse error response:', jsonError);
-      }
-
-      const errorMessage = errorData?.message || `HTTP ${response.status}`;
-      throw new Error(errorMessage);
-    }
-
-    // Update status for processing
-    showStatus(STATUS_MESSAGES.generating, 'info');
-
-    // Get the JSON response
-    const responseData = await response.json();
-
-    if (!responseData.success || !responseData.data) {
-      throw new Error('Invalid response format from server');
-    }
-
-    // Complete progress and display results
-    completeProgress(() => {
-      displayResults(responseData.data);
-    });
-  } catch (error) {
-    resetProgressController();
-    updateProgressDisplay(PROGRESS_CONFIG.MIN_VALUE);
-    handleApiError(error);
-  } finally {
-    // Reset UI state
-    setButtonState(false);
-    hideProgress();
-    clearTimeout(timeoutId);
-  }
-};
-
-// Input mode management functions
-const getCurrentInputMode = () => {
-  const singleModeRadio = document.getElementById('single-mode');
-  const multipleModeRadio = document.getElementById('multiple-mode');
-  const listsModeRadio = document.getElementById('lists-mode');
-
-  if (singleModeRadio.checked) return INPUT_MODE.SINGLE;
-  if (multipleModeRadio.checked) return INPUT_MODE.MULTIPLE;
-  if (listsModeRadio.checked) return INPUT_MODE.LISTS;
-  return INPUT_MODE.SINGLE; // fallback
-};
-
-const switchInputMode = (mode) => {
-  const singleInputContainer = document.getElementById(
-    'single-input-container'
-  );
-  const multipleInputContainer = document.getElementById(
-    'multiple-input-container'
-  );
-  const listsInputContainer = document.getElementById('lists-input-container');
-  const singleOption = singleModeRadio.closest('.radio-option');
-  const multipleOption = multipleModeRadio.closest('.radio-option');
-  const listsOption = listsModeRadio.closest('.radio-option');
-
-  // Remove active class from all options first
-  singleOption.classList.remove('active');
-  multipleOption.classList.remove('active');
-  listsOption.classList.remove('active');
-
-  // Hide all input containers
-  singleInputContainer.classList.add('hidden');
-  multipleInputContainer.classList.add('hidden');
-  listsInputContainer.classList.add('hidden');
-
-  btnText.textContent = MAGIC_BUTTON_TEXT;
-
-  // Set active mode and button text
-  if (mode === INPUT_MODE.SINGLE) {
-    singleInputContainer.classList.remove('hidden');
-    singleModeRadio.checked = true;
-    singleOption.classList.add('active');
-  } else if (mode === INPUT_MODE.MULTIPLE) {
-    multipleInputContainer.classList.remove('hidden');
-    multipleModeRadio.checked = true;
-    multipleOption.classList.add('active');
-  } else if (mode === INPUT_MODE.LISTS) {
-    listsInputContainer.classList.remove('hidden');
-    listsModeRadio.checked = true;
-    listsOption.classList.add('active');
-  }
-
-  // Clear any existing status messages when switching modes
-  hideStatus();
-  resultsSection.classList.add('hidden');
-};
-
 // Event listeners
 scrapeBtn.addEventListener('click', async () => {
-  const inputMode = getCurrentInputMode();
+  // Get URLs from unified input
+  const urlsText = amazonUrlsTextarea.value.trim();
 
-  if (inputMode === INPUT_MODE.SINGLE) {
-    // Handle single URL mode
-    const url = urlInput.value.trim();
-
-    // Validate URL
-    const validation = validateAmazonUrl(url);
-    if (!validation.valid) {
-      showStatus(validation.message, 'error');
-      return;
+  // Validate URLs with unified validation
+  const validation = validateUnifiedUrls(urlsText);
+  if (!validation.valid) {
+    showStatus(validation.message, 'error');
+    if (validation.details) {
+      console.error('URL validation details:', validation.details);
     }
-
-    // Clear previous status
-    hideStatus();
-
-    // Start scraping
-    await scrapeProduct(url);
-  } else if (inputMode === INPUT_MODE.MULTIPLE) {
-    // Handle multiple URLs mode
-    const urlsText = urlsTextarea.value.trim();
-
-    // Validate URLs
-    const validation = validateMultipleUrls(urlsText);
-    if (!validation.valid) {
-      showStatus(validation.message, 'error');
-      if (validation.details) {
-        console.error('URL validation details:', validation.details);
-      }
-      return;
-    }
-
-    // Clear previous status
-    hideStatus();
-
-    // Start scraping multiple products
-    await scrapeMultipleProducts(validation.urls);
-  } else if (inputMode === INPUT_MODE.LISTS) {
-    // Handle product lists mode
-    const urlsText = listsTextarea.value.trim();
-
-    // Validate URLs
-    const validation = validateListUrls(urlsText);
-    if (!validation.valid) {
-      showStatus(validation.message, 'error');
-      if (validation.details) {
-        console.error('URL validation details:', validation.details);
-      }
-      return;
-    }
-
-    // Clear previous status
-    hideStatus();
-
-    // Start scraping product lists (using same function as multiple products for now)
-    await scrapeMultipleProducts(validation.urls);
+    return;
   }
+
+  // Clear previous status
+  hideStatus();
+
+  // Process URLs with unified logic
+  await processUnifiedUrls(validation);
 });
 
-// Handle Enter key in URL inputs
-urlInput.addEventListener('keypress', (event) => {
-  if (event.key === 'Enter' && !scrapeBtn.disabled) {
-    scrapeBtn.click();
-  }
-});
-
-urlsTextarea.addEventListener('keypress', (event) => {
+// Handle keyboard shortcuts in unified input
+amazonUrlsTextarea.addEventListener('keypress', (event) => {
   if (event.key === 'Enter' && event.ctrlKey && !scrapeBtn.disabled) {
     // Ctrl+Enter to submit in textarea mode
+    event.preventDefault();
     scrapeBtn.click();
   }
 });
 
-listsTextarea.addEventListener('keypress', (event) => {
-  if (event.key === 'Enter' && event.ctrlKey && !scrapeBtn.disabled) {
-    // Ctrl+Enter to submit in textarea mode
-    scrapeBtn.click();
-  }
-});
-
-// Radio button change handlers
-singleModeRadio.addEventListener('change', () => {
-  if (singleModeRadio.checked) {
-    switchInputMode(INPUT_MODE.SINGLE);
-  }
-});
-
-multipleModeRadio.addEventListener('change', () => {
-  if (multipleModeRadio.checked) {
-    switchInputMode(INPUT_MODE.MULTIPLE);
-  }
-});
-
-listsModeRadio.addEventListener('change', () => {
-  if (listsModeRadio.checked) {
-    switchInputMode(INPUT_MODE.LISTS);
-  }
-});
-
-// Handle radio option click events for better UX
-const singleOption = document
-  .querySelector('#single-mode')
-  .closest('.radio-option');
-const multipleOption = document
-  .querySelector('#multiple-mode')
-  .closest('.radio-option');
-const listsOption = document
-  .querySelector('#lists-mode')
-  .closest('.radio-option');
-
-singleOption.addEventListener('click', () => {
-  if (!singleModeRadio.checked) {
-    singleModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.SINGLE);
-  }
-});
-
-multipleOption.addEventListener('click', () => {
-  if (!multipleModeRadio.checked) {
-    multipleModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.MULTIPLE);
-  }
-});
-
-listsOption.addEventListener('click', () => {
-  if (!listsModeRadio.checked) {
-    listsModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.LISTS);
-  }
-});
-
-// Handle keyboard navigation
-singleOption.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    singleModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.SINGLE);
-  }
-});
-
-multipleOption.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    multipleModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.MULTIPLE);
-  }
-});
-
-listsOption.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    listsModeRadio.checked = true;
-    switchInputMode(INPUT_MODE.LISTS);
-  }
-});
-
-// Make radio options focusable for keyboard navigation
-singleOption.setAttribute('tabindex', '0');
-multipleOption.setAttribute('tabindex', '0');
-listsOption.setAttribute('tabindex', '0');
-
-// Clear status when user starts typing
-urlInput.addEventListener('input', () => {
+// Clear status when user starts typing in unified input
+amazonUrlsTextarea.addEventListener('input', () => {
   if (statusMessage.style.display !== 'none') {
     hideStatus();
   }
 });
 
-urlsTextarea.addEventListener('input', () => {
-  if (statusMessage.style.display !== 'none') {
-    hideStatus();
-  }
-});
-
-listsTextarea.addEventListener('input', () => {
-  if (statusMessage.style.display !== 'none') {
-    hideStatus();
-  }
-});
-
-// Auto-focus appropriate input on page load
+// Auto-focus unified input on page load
 document.addEventListener('DOMContentLoaded', () => {
-  // Initialize to single mode
-  switchInputMode(INPUT_MODE.SINGLE);
-  urlInput.focus();
+  amazonUrlsTextarea.focus();
 });
 
-// Handle paste events to automatically clean URLs
-urlInput.addEventListener('paste', (event) => {
+// Handle paste events to automatically clean URLs in unified input
+amazonUrlsTextarea.addEventListener('paste', (event) => {
   setTimeout(() => {
-    const pastedValue = urlInput.value.trim();
-    if (pastedValue) {
-      // Clean up common URL artifacts
-      const cleanedUrl = pastedValue
-        .replace(/\?ref=.*$/, '') // Remove ref parameters
-        .replace(/&ref=.*$/, '')
-        .replace(/#.*$/, ''); // Remove fragments
-
-      if (cleanedUrl !== pastedValue) {
-        urlInput.value = cleanedUrl;
-      }
-    }
-  }, 0);
-});
-
-urlsTextarea.addEventListener('paste', (event) => {
-  setTimeout(() => {
-    const pastedValue = urlsTextarea.value;
+    const pastedValue = amazonUrlsTextarea.value;
     if (pastedValue) {
       // Clean up URLs in textarea - split by lines and clean each URL
       const cleanedText = pastedValue
@@ -922,33 +709,7 @@ urlsTextarea.addEventListener('paste', (event) => {
         .join('\n');
 
       if (cleanedText !== pastedValue) {
-        urlsTextarea.value = cleanedText;
-      }
-    }
-  }, 0);
-});
-
-listsTextarea.addEventListener('paste', (event) => {
-  setTimeout(() => {
-    const pastedValue = listsTextarea.value;
-    if (pastedValue) {
-      // Clean up URLs in textarea - split by lines and clean each URL
-      const cleanedText = pastedValue
-        .split('\n')
-        .map((line) => {
-          const trimmedLine = line.trim();
-          if (trimmedLine && trimmedLine.includes('amazon.')) {
-            return trimmedLine
-              .replace(/\?ref=.*$/, '') // Remove ref parameters
-              .replace(/&ref=.*$/, '')
-              .replace(/#.*$/, ''); // Remove fragments
-          }
-          return trimmedLine;
-        })
-        .join('\n');
-
-      if (cleanedText !== pastedValue) {
-        listsTextarea.value = cleanedText;
+        amazonUrlsTextarea.value = cleanedText;
       }
     }
   }, 0);
@@ -958,8 +719,11 @@ listsTextarea.addEventListener('paste', (event) => {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     validateAmazonUrl,
+    validateUnifiedUrls,
+    detectUrlType,
     formatCellValue,
     displayResults,
     handleApiError,
+    processUnifiedUrls,
   };
 }

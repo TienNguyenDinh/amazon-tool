@@ -49,10 +49,6 @@ main {
   padding: 40px;
 }
 
-.input-section {
-  margin-bottom: 30px;
-}
-
 /* Input Mode Toggle */
 .input-mode-toggle {
   margin-bottom: 25px;
@@ -167,9 +163,7 @@ main {
   color: #555;
 }
 
-#url-input,
-#urls-textarea,
-#lists-textarea {
+#amazon-urls-textarea {
   width: 100%;
   padding: 15px;
   border: 2px solid #e1e5e9;
@@ -178,18 +172,12 @@ main {
   transition: border-color 0.3s ease;
   margin-bottom: 10px;
   font-family: inherit;
-}
-
-#urls-textarea,
-#lists-textarea {
   resize: vertical;
-  min-height: 120px;
+  min-height: 180px; /* Increased for better visibility of placeholder text */
   line-height: 1.5;
 }
 
-#url-input:focus,
-#urls-textarea:focus,
-#lists-textarea:focus {
+#amazon-urls-textarea:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -509,7 +497,7 @@ footer {
   }
 
   .input-mode-toggle {
-    padding: 20px;
+    display: none; /* Hide the entire toggle section */
   }
 
   .radio-group {
@@ -557,13 +545,12 @@ footer {
     font-size: 1.5rem;
   }
 
-  #url-input,
-  #urls-textarea {
+  #amazon-urls-textarea {
     font-size: 16px; /* Prevents zoom on iOS */
   }
 
   .input-mode-toggle {
-    padding: 16px;
+    display: none; /* Ensure it's hidden on smaller screens too */
   }
 
   .toggle-label {
