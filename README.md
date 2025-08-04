@@ -1,16 +1,25 @@
 # Amazon Product Scraper
 
-A full-stack web application that allows users to input an Amazon product URL, scrapes key data from the product page, and displays the data in a professional table format.
+A full-stack web application that allows users to input Amazon URLs (product pages, search results, category pages, or store pages), scrapes key data from the pages, and displays the data in a professional table format.
 
 ## Features
 
-- 🔍 **Web Scraping**: Uses HTTP requests with intelligent HTML parsing for serverless compatibility
+- 🔍 **Advanced Web Scraping**: Supports both individual product pages and list pages (search results, categories, store pages)
+- 🗂️ **Multi-Product Extraction**: Automatically extracts multiple products from list pages with intelligent product detection
 - 📊 **Professional Table Display**: Shows product data in a modern, responsive table format
-- 🛡️ **Anti-Blocking**: Implements realistic headers and request patterns
-- 🎨 **Modern UI**: Clean, responsive web interface
-- ⚡ **Real-time Feedback**: Progress indicators and status updates
-- 🔧 **Error Handling**: Comprehensive error handling with user-friendly messages
+- 🛡️ **Anti-Blocking**: Implements realistic headers, delays, and request patterns
+- 🎨 **Modern UI**: Clean, responsive web interface with enhanced URL type detection
+- ⚡ **Real-time Feedback**: Progress indicators and status updates with list processing information
+- 🔧 **Error Handling**: Comprehensive error handling with fallback data extraction
 - ☁️ **Serverless Ready**: Optimized for deployment on Vercel and other serverless platforms
+- 🚦 **Rate Limiting**: Built-in delays and limits to respect Amazon's servers
+
+## Supported URL Types
+
+- 🛍️ **Product URLs**: Individual product pages (e.g., `/dp/ASIN`)
+- 🔍 **Search URLs**: Search results pages (e.g., `/s?k=keyword`)
+- 📂 **Category URLs**: Best sellers, category pages (e.g., `/zgbs/`)
+- 🏪 **Store URLs**: Brand stores and shop pages (e.g., `/stores/brand-name`)
 
 ## Data Extracted
 
@@ -20,6 +29,11 @@ A full-stack web application that allows users to input an Amazon product URL, s
 - **Star Rating**: Customer rating (e.g., "4.5 out of 5 stars")
 - **Number of Reviews**: Total review count
 - **Product URL**: Original Amazon URL
+
+### List Page Processing
+- **Multi-Product Support**: Extracts up to 10 products per list page
+- **Intelligent Fallback**: Uses list page data when individual product scraping fails
+- **Rate Limited**: Automatic delays between requests to respect server resources
 
 ## Tech Stack
 

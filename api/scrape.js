@@ -56,6 +56,68 @@ const CSS_SELECTORS = {
     // ASIN is typically extracted from URL or data attributes
     dataAttributes: ['[data-asin]', '[data-product-id]', '[data-csa-c-asin]'],
   },
+  // List page selectors for extracting product links
+  listPages: {
+    search: {
+      productContainers: [
+        '[data-component-type="s-search-result"]',
+        '.s-result-item',
+        '[data-index]',
+        '.sg-col-inner .s-widget',
+      ],
+      productLinks: [
+        'h2 a[href*="/dp/"]',
+        '.a-link-normal[href*="/dp/"]',
+        'a[href*="/gp/product/"]',
+        '.s-link-normal[href*="/dp/"]',
+      ],
+      listTitle: [
+        'h2 a span',
+        '.a-size-base-plus',
+        '.a-size-mini .a-link-normal span',
+      ],
+      listPrice: [
+        '.a-price .a-offscreen',
+        '.a-price-whole',
+        '.a-text-price .a-offscreen',
+      ],
+      listRating: ['.a-icon-alt', '[aria-label*="stars"]'],
+    },
+    category: {
+      productContainers: [
+        '.zg-item-immersion',
+        '.p13n-sc-uncoverable-faceout',
+        '.a-carousel-card',
+        '[data-client-recs-list] li',
+      ],
+      productLinks: [
+        '.p13n-sc-truncate a[href*="/dp/"]',
+        'a[href*="/gp/product/"]',
+        '.a-link-normal[href*="/dp/"]',
+      ],
+      listTitle: ['.p13n-sc-truncate', '.a-truncate-cut', '.a-size-base-plus'],
+      listPrice: ['.a-price .a-offscreen', '.a-text-price .a-offscreen'],
+    },
+    store: {
+      productContainers: [
+        '[data-card-identifier]',
+        '.s-widget-container',
+        '.s-result-item',
+        '.octopus-pc-card',
+      ],
+      productLinks: [
+        'a[href*="/dp/"]',
+        '.a-link-normal[href*="/dp/"]',
+        'a[href*="/gp/product/"]',
+      ],
+      listTitle: [
+        '.octopus-pc-card-content h3',
+        '.a-size-base-plus',
+        '.s-truncate',
+      ],
+      listPrice: ['.a-price .a-offscreen', '.a-text-price .a-offscreen'],
+    },
+  },
 };
 
 // Regular expressions for data extraction and validation
@@ -69,27 +131,67 @@ const REGEX_PATTERNS = {
 
 // Configuration constants
 const SCRAPING_CONFIG = {
-  timeout: 30000,
+  timeout: 45000, // Increased timeout for better reliability
   waitTime: 1000,
   userAgent:
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  maxRetryAttempts: 2,
-  retryDelay: 2000,
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  maxRetryAttempts: 3, // Increased retry attempts
+  retryDelay: 3000, // Increased delay between retries
   headers: {
     Accept:
-      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Encoding': 'gzip, deflate',
     Connection: 'keep-alive',
     'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-User': '?1',
-    'Cache-Control': 'max-age=0',
-    DNT: '1',
-    'Sec-GPC': '1',
+    'Cache-Control': 'no-cache',
+    Pragma: 'no-cache',
   },
+};
+
+// List page processing configuration
+const LIST_PROCESSING_CONFIG = {
+  maxProductsPerList: 10,
+  delayBetweenProducts: 1500,
+  maxListProcessingTime: 300000, // 5 minutes
+  enableFallbackToListData: true,
+};
+
+// Timing constants for human-like behavior
+const TIMING_CONFIG = {
+  minInitialDelay: 1000, // Minimum delay for first attempt
+  maxInitialDelay: 3000, // Maximum delay for first attempt
+  maxRandomDelay: 2000, // Maximum additional random delay
+  delayProbability: 0.5, // Probability of adding delay on first attempt
+};
+
+// URL Type constants
+const URL_TYPES = {
+  PRODUCT: 'product',
+  SEARCH: 'search',
+  CATEGORY: 'category',
+  STORE: 'store',
+  UNKNOWN: 'unknown',
+};
+
+// Enhanced URL patterns for better detection
+const URL_PATTERNS = {
+  PRODUCT: [
+    /\/dp\/[A-Z0-9]{10}/,
+    /\/gp\/product\/[A-Z0-9]{10}/,
+    /\/product\/[A-Z0-9]{10}/,
+  ],
+  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/, /\/s$/],
+  CATEGORY: [
+    /\/gp\/bestsellers/,
+    /\/zgbs\//,
+    /\/Best-Sellers-/,
+    /\/gp\/top-sellers/,
+    /\/gp\/new-releases/,
+    /\/most-wished-for/,
+    /\/movers-and-shakers/,
+  ],
+  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
 };
 
 const DEFAULT_VALUES = {
@@ -101,6 +203,45 @@ const DEFAULT_VALUES = {
 const log = (message, level = 'INFO') => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] [${level}] ${message}`);
+};
+
+// Detect URL type based on patterns
+const detectUrlType = (url) => {
+  if (!url || typeof url !== 'string') {
+    return URL_TYPES.UNKNOWN;
+  }
+
+  const cleanUrl = url.trim();
+
+  // Check product patterns first (most specific)
+  for (const pattern of URL_PATTERNS.PRODUCT) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPES.PRODUCT;
+    }
+  }
+
+  // Check search patterns
+  for (const pattern of URL_PATTERNS.SEARCH) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPES.SEARCH;
+    }
+  }
+
+  // Check category patterns
+  for (const pattern of URL_PATTERNS.CATEGORY) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPES.CATEGORY;
+    }
+  }
+
+  // Check store patterns
+  for (const pattern of URL_PATTERNS.STORE) {
+    if (pattern.test(cleanUrl)) {
+      return URL_TYPES.STORE;
+    }
+  }
+
+  return URL_TYPES.UNKNOWN;
 };
 
 // HTTP request helper function with compression support
@@ -138,7 +279,21 @@ const makeHttpRequest = (url, options = {}) => {
       }
 
       if (res.statusCode !== 200) {
-        reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        let errorMessage = `HTTP ${res.statusCode}: ${res.statusMessage}`;
+        // Provide more specific error messages for common issues
+        if (res.statusCode === 503) {
+          errorMessage =
+            'Amazon service temporarily unavailable - possible rate limiting or bot detection';
+        } else if (res.statusCode === 403) {
+          errorMessage =
+            'Access forbidden - Amazon may be blocking automated requests';
+        } else if (res.statusCode === 404) {
+          errorMessage =
+            'Product page not found - URL may be invalid or product removed';
+        } else if (res.statusCode >= 500) {
+          errorMessage = 'Amazon server error - please try again later';
+        }
+        reject(new Error(errorMessage));
         return;
       }
 
@@ -373,6 +528,234 @@ const extractReviewCount = ($) => {
   return DEFAULT_VALUES.notAvailable;
 };
 
+// Extract product links from list pages
+const extractProductLinksFromList = ($, urlType) => {
+  const productLinks = [];
+  const selectors = CSS_SELECTORS.listPages[urlType];
+
+  if (!selectors) {
+    log(`No selectors defined for URL type: ${urlType}`, 'WARN');
+    return productLinks;
+  }
+
+  // Find product containers first
+  let containers = $();
+  for (const containerSelector of selectors.productContainers) {
+    const found = $(containerSelector);
+    if (found.length > 0) {
+      containers = found;
+      log(
+        `Found ${found.length} product containers with selector: ${containerSelector}`
+      );
+      break;
+    }
+  }
+
+  if (containers.length === 0) {
+    log('No product containers found on list page', 'WARN');
+    return productLinks;
+  }
+
+  // Extract links from containers (limit to configured maximum)
+  containers
+    .slice(0, LIST_PROCESSING_CONFIG.maxProductsPerList)
+    .each((index, element) => {
+      const container = $(element);
+
+      // Try to find product link within container
+      let productUrl = null;
+      for (const linkSelector of selectors.productLinks) {
+        const linkElement = container.find(linkSelector).first();
+        if (linkElement.length > 0) {
+          const href = linkElement.attr('href');
+          if (href) {
+            // Convert relative URLs to absolute
+            productUrl = href.startsWith('http')
+              ? href
+              : `https://www.amazon.com${href}`;
+            break;
+          }
+        }
+      }
+
+      if (productUrl) {
+        productLinks.push({
+          url: productUrl,
+          containerIndex: index,
+        });
+      }
+    });
+
+  log(`Extracted ${productLinks.length} product links from list page`);
+  return productLinks;
+};
+
+// Extract basic product info from list page item (fallback data)
+const extractListItemData = ($container, selectors, productUrl) => {
+  const listItemData = {
+    title: DEFAULT_VALUES.notAvailable,
+    price: DEFAULT_VALUES.notAvailable,
+    asin: DEFAULT_VALUES.notAvailable,
+    rating: DEFAULT_VALUES.notAvailable,
+    reviewCount: DEFAULT_VALUES.notAvailable,
+    url: productUrl,
+    isListData: true,
+  };
+
+  // Extract ASIN from URL
+  const asinMatch = productUrl.match(REGEX_PATTERNS.asinFromUrl);
+  if (asinMatch) {
+    listItemData.asin = asinMatch[1];
+  }
+
+  // Extract title from list item
+  if (selectors.listTitle) {
+    for (const titleSelector of selectors.listTitle) {
+      const titleElement = $container.find(titleSelector).first();
+      if (titleElement.length > 0) {
+        const titleText = titleElement.text().trim();
+        if (titleText) {
+          listItemData.title = titleText;
+          break;
+        }
+      }
+    }
+  }
+
+  // Extract price from list item
+  if (selectors.listPrice) {
+    for (const priceSelector of selectors.listPrice) {
+      const priceElement = $container.find(priceSelector).first();
+      if (priceElement.length > 0) {
+        const priceText = priceElement.text().trim();
+        if (priceText && priceText.includes('$')) {
+          const priceMatch = priceText.match(/\$[\d,]+\.?\d*/);
+          if (priceMatch) {
+            listItemData.price = priceMatch[0];
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Extract rating from list item
+  if (selectors.listRating) {
+    for (const ratingSelector of selectors.listRating) {
+      const ratingElement = $container.find(ratingSelector).first();
+      if (ratingElement.length > 0) {
+        const ratingText =
+          ratingElement.text() || ratingElement.attr('aria-label') || '';
+        const ratingMatch = ratingText.match(REGEX_PATTERNS.ratingExtraction);
+        if (ratingMatch) {
+          listItemData.rating = ratingMatch[1] + ' out of 5 stars';
+          break;
+        }
+      }
+    }
+  }
+
+  return listItemData;
+};
+
+// Process list page and extract multiple products
+const processListPage = async (html, url) => {
+  log(`Processing list page: ${url}`);
+
+  const urlType = detectUrlType(url);
+  const $ = cheerio.load(html);
+  const productLinks = extractProductLinksFromList($, urlType);
+
+  if (productLinks.length === 0) {
+    throw new Error('No products found on the list page');
+  }
+
+  const products = [];
+  const selectors = CSS_SELECTORS.listPages[urlType];
+  const maxProducts = Math.min(
+    productLinks.length,
+    LIST_PROCESSING_CONFIG.maxProductsPerList
+  );
+
+  log(`Processing ${maxProducts} products from list page`);
+
+  for (let i = 0; i < maxProducts; i++) {
+    const { url: productUrl, containerIndex } = productLinks[i];
+
+    try {
+      log(`Processing product ${i + 1}/${maxProducts}: ${productUrl}`);
+
+      // Try to scrape individual product page
+      const productData = await scrapeAmazonProduct(productUrl, false); // false = don't process as list
+      products.push(productData);
+
+      // Add delay between product requests
+      if (i < maxProducts - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, LIST_PROCESSING_CONFIG.delayBetweenProducts)
+        );
+      }
+    } catch (error) {
+      log(
+        `Failed to scrape individual product ${productUrl}: ${error.message}`,
+        'WARN'
+      );
+
+      // Fallback to list data if enabled
+      if (LIST_PROCESSING_CONFIG.enableFallbackToListData && selectors) {
+        try {
+          const containers = $(
+            CSS_SELECTORS.listPages[urlType].productContainers[0]
+          );
+          const container = containers.eq(containerIndex);
+          if (container.length > 0) {
+            const listItemData = extractListItemData(
+              container,
+              selectors,
+              productUrl
+            );
+            listItemData.error = `Individual page scraping failed: ${error.message}`;
+            products.push(listItemData);
+            log(`Used fallback list data for product: ${productUrl}`);
+          }
+        } catch (fallbackError) {
+          log(
+            `Fallback extraction also failed for ${productUrl}: ${fallbackError.message}`,
+            'ERROR'
+          );
+          products.push({
+            error: `Product extraction failed: ${error.message}`,
+            url: productUrl,
+            title: DEFAULT_VALUES.extractionFailed,
+            price: DEFAULT_VALUES.notAvailable,
+            asin: DEFAULT_VALUES.notAvailable,
+            rating: DEFAULT_VALUES.notAvailable,
+            reviewCount: DEFAULT_VALUES.notAvailable,
+          });
+        }
+      } else {
+        // Add error entry
+        products.push({
+          error: `Product extraction failed: ${error.message}`,
+          url: productUrl,
+          title: DEFAULT_VALUES.extractionFailed,
+          price: DEFAULT_VALUES.notAvailable,
+          asin: DEFAULT_VALUES.notAvailable,
+          rating: DEFAULT_VALUES.notAvailable,
+          reviewCount: DEFAULT_VALUES.notAvailable,
+        });
+      }
+    }
+  }
+
+  log(
+    `Completed processing list page. Successfully extracted ${
+      products.filter((p) => !p.error).length
+    }/${products.length} products`
+  );
+  return products;
+};
+
 // Extract product data from HTML using CSS selectors
 const extractProductData = (html, url) => {
   log('Starting data extraction from HTML using CSS selectors');
@@ -419,9 +802,19 @@ const extractProductData = (html, url) => {
   }
 };
 
-// Main scraping function with retry logic
-const scrapeAmazonProduct = async (url) => {
+// Main scraping function with retry logic - handles both individual products and list pages
+const scrapeAmazonProduct = async (url, processAsList = true) => {
   let lastError;
+
+  // Detect URL type first
+  const urlType = detectUrlType(url);
+  const isListPage =
+    processAsList &&
+    (urlType === URL_TYPES.SEARCH ||
+      urlType === URL_TYPES.CATEGORY ||
+      urlType === URL_TYPES.STORE);
+
+  log(`Detected URL type: ${urlType}, processing as list: ${isListPage}`);
 
   for (
     let attempt = 1;
@@ -442,12 +835,18 @@ const scrapeAmazonProduct = async (url) => {
       const cleanUrl = url.split('#')[0]; // Remove fragment only
       log(`Using clean URL: ${cleanUrl}`);
 
-      // Add random delay to mimic human behavior
-      const baseDelay = attempt === 1 ? 500 : SCRAPING_CONFIG.retryDelay;
-      const randomDelay = baseDelay + Math.random() * 1000; // Add 0-1 second random delay
+      // Add random delay to mimic human behavior with better randomization
+      const baseDelay =
+        attempt === 1
+          ? Math.floor(
+              Math.random() *
+                (TIMING_CONFIG.maxInitialDelay - TIMING_CONFIG.minInitialDelay)
+            ) + TIMING_CONFIG.minInitialDelay
+          : SCRAPING_CONFIG.retryDelay;
+      const randomDelay =
+        baseDelay + Math.floor(Math.random() * TIMING_CONFIG.maxRandomDelay);
 
-      if (attempt > 1 || Math.random() < 0.3) {
-        // 30% chance of delay even on first attempt
+      if (attempt > 1 || Math.random() < TIMING_CONFIG.delayProbability) {
         log(`Waiting ${Math.round(randomDelay)}ms before request...`);
         await new Promise((resolve) => setTimeout(resolve, randomDelay));
       }
@@ -456,8 +855,7 @@ const scrapeAmazonProduct = async (url) => {
       log('Making HTTP request to Amazon...');
       const additionalHeaders = {
         Referer: 'https://www.amazon.com/',
-        Origin: 'https://www.amazon.com',
-        'X-Requested-With': 'XMLHttpRequest',
+        // Remove suspicious headers that might trigger bot detection
       };
       const html = await makeHttpRequest(cleanUrl, {
         headers: additionalHeaders,
@@ -491,22 +889,33 @@ const scrapeAmazonProduct = async (url) => {
         log('Continuing with data extraction despite bot detection...', 'INFO');
       }
 
-      // Extract product data from HTML
-      const productData = extractProductData(html, url);
-
-      // Validate that we extracted meaningful data
-      if (
-        productData.title === DEFAULT_VALUES.notAvailable &&
-        productData.price === DEFAULT_VALUES.notAvailable &&
-        productData.rating === DEFAULT_VALUES.notAvailable
-      ) {
-        throw new Error(
-          'No product data could be extracted - page structure may have changed'
+      // Process based on URL type
+      if (isListPage) {
+        log('Processing as list page');
+        const products = await processListPage(html, url);
+        log(
+          `Scraping completed successfully - extracted ${products.length} products from list`
         );
-      }
+        return products;
+      } else {
+        log('Processing as individual product page');
+        // Extract product data from HTML
+        const productData = extractProductData(html, url);
 
-      log('Scraping completed successfully');
-      return productData;
+        // Validate that we extracted meaningful data
+        if (
+          productData.title === DEFAULT_VALUES.notAvailable &&
+          productData.price === DEFAULT_VALUES.notAvailable &&
+          productData.rating === DEFAULT_VALUES.notAvailable
+        ) {
+          throw new Error(
+            'No product data could be extracted - page structure may have changed'
+          );
+        }
+
+        log('Scraping completed successfully');
+        return productData;
+      }
     } catch (error) {
       lastError = error;
       log(`Scraping attempt ${attempt} failed: ${error.message}`, 'ERROR');
@@ -604,11 +1013,25 @@ module.exports = async (req, res) => {
 
     log('API request completed successfully');
 
-    // Return JSON response instead of Excel file
-    res.status(200).json({
-      success: true,
-      data: productData,
-    });
+    // Return JSON response with appropriate format
+    // Handle both single product and array of products
+    if (Array.isArray(productData)) {
+      // List page results
+      res.status(200).json({
+        success: true,
+        data: productData,
+        count: productData.length,
+        isListResult: true,
+      });
+    } else {
+      // Single product result
+      res.status(200).json({
+        success: true,
+        data: productData,
+        count: 1,
+        isListResult: false,
+      });
+    }
   } catch (error) {
     log(`API request failed: ${error.message}`, 'ERROR');
 

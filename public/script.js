@@ -86,6 +86,7 @@ const STATUS_MESSAGES = {
   processing: 'Processing URL {current} of {total} ({type})...',
   generating: 'Processing extracted data...',
   displaying: 'Success! Displaying product information...',
+  displayingList: 'Success! Displaying {count} products from list pages...',
   error: 'Error occurred while scraping',
   invalidUrl: 'Please enter a valid Amazon URL',
   networkError: 'Network error. Please check your connection and try again.',
@@ -99,6 +100,8 @@ const STATUS_MESSAGES = {
   extractionError:
     'Could not extract product data. Please verify this is a valid Amazon page.',
   partialSuccess: 'Some URLs could not be processed. Check individual results.',
+  partialListSuccess:
+    'Extracted {success} of {total} products. Some products could not be processed.',
   urlTypesDetected: 'Detected URL types: {summary}',
 };
 
@@ -456,11 +459,30 @@ const displayResults = (productDataArray) => {
     const successCount = productsArray.filter(
       (product) => !product.error
     ).length;
+    const hasListResults = productsArray.some(
+      (product) => product.fromListPage
+    );
 
     if (hasErrors && successCount > 0) {
-      showStatus(STATUS_MESSAGES.partialSuccess, 'warning');
+      if (hasListResults) {
+        showStatus(
+          STATUS_MESSAGES.partialListSuccess
+            .replace('{success}', successCount)
+            .replace('{total}', productsArray.length),
+          'warning'
+        );
+      } else {
+        showStatus(STATUS_MESSAGES.partialSuccess, 'warning');
+      }
     } else if (successCount > 0) {
-      showStatus(STATUS_MESSAGES.displaying, 'success');
+      if (hasListResults) {
+        showStatus(
+          STATUS_MESSAGES.displayingList.replace('{count}', successCount),
+          'success'
+        );
+      } else {
+        showStatus(STATUS_MESSAGES.displaying, 'success');
+      }
     } else {
       showStatus('All products failed to scrape', 'error');
     }
@@ -539,13 +561,29 @@ const processUnifiedUrls = async (urlData) => {
         if (response.ok) {
           const responseData = await response.json();
           if (responseData.success && responseData.data) {
-            // Add URL type information to result
-            const enrichedData = {
-              ...responseData.data,
-              urlType: type,
-              originalIndex: urlItem.index,
-            };
-            results.push(enrichedData);
+            // Handle both single product and list results
+            if (responseData.isListResult && Array.isArray(responseData.data)) {
+              // List page result - add each product with metadata
+              responseData.data.forEach((productData, productIndex) => {
+                const enrichedData = {
+                  ...productData,
+                  urlType: type,
+                  originalIndex: urlItem.index,
+                  listIndex: productIndex,
+                  fromListPage: true,
+                };
+                results.push(enrichedData);
+              });
+            } else {
+              // Single product result
+              const enrichedData = {
+                ...responseData.data,
+                urlType: type,
+                originalIndex: urlItem.index,
+                fromListPage: false,
+              };
+              results.push(enrichedData);
+            }
           } else {
             results.push({
               error: 'Invalid response format',
