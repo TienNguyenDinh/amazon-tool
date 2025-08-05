@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js",
-    "dev": "node server.js",
+    "dev": "nodemon",
     "build": "echo 'No build process required for this Node.js app'"
   },
   "keywords": [
@@ -32,5 +32,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }
