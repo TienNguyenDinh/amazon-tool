@@ -207,6 +207,33 @@ const URL_TYPES = {
   UNKNOWN: 'unknown',
 };
 
+// Patterns to exclude from store page product extraction
+const STORE_URL_EXCLUSIONS = {
+  // Footer and promotional links
+  FOOTER_LINKS: [
+    /plattr=SCFOOT/,
+    /plattr=ACOMFO/,
+    /ref_=footer_/,
+    /ref_=nav_/,
+    /ref_=hp_/,
+  ],
+  // Amazon promotional/service products
+  PROMO_PRODUCTS: [
+    /B07984JN3L/, // Amazon Business American Express Card
+    /B084KP3NG6/, // Amazon Secured Card
+    /B0C7S8DFTW/, // Amazon Prime
+    /B08N5WRWNW/, // Amazon Gift Card
+  ],
+  // Service and digital products that are not store products
+  SERVICE_PATTERNS: [
+    /amazon.*card/i,
+    /amazon.*business/i,
+    /amazon.*prime/i,
+    /amazon.*gift/i,
+    /amazon.*credit/i,
+  ],
+};
+
 // Enhanced URL patterns for better detection
 const URL_PATTERNS = {
   PRODUCT: [
@@ -275,6 +302,39 @@ const detectUrlType = (url) => {
   }
 
   return URL_TYPES.UNKNOWN;
+};
+
+// Check if a URL should be excluded from store product extraction
+const shouldExcludeStoreUrl = (url, title = '') => {
+  if (!url || typeof url !== 'string') {
+    return true;
+  }
+
+  // Check footer and promotional link patterns
+  for (const pattern of STORE_URL_EXCLUSIONS.FOOTER_LINKS) {
+    if (pattern.test(url)) {
+      log(`Excluding footer/promo link: ${url}`, 'DEBUG');
+      return true;
+    }
+  }
+
+  // Check specific promotional product ASINs
+  for (const pattern of STORE_URL_EXCLUSIONS.PROMO_PRODUCTS) {
+    if (pattern.test(url)) {
+      log(`Excluding promotional product: ${url}`, 'DEBUG');
+      return true;
+    }
+  }
+
+  // Check service pattern in URL or title
+  for (const pattern of STORE_URL_EXCLUSIONS.SERVICE_PATTERNS) {
+    if (pattern.test(url) || (title && pattern.test(title))) {
+      log(`Excluding service product: ${url} (${title})`, 'DEBUG');
+      return true;
+    }
+  }
+
+  return false;
 };
 
 // Clean and normalize product URLs to avoid bot detection
@@ -594,6 +654,12 @@ const extractProductLinksFromList = ($, urlType) => {
       }
 
       if (productUrl) {
+        // For store pages, filter out footer links and promotional products
+        if (urlType === 'store' && shouldExcludeStoreUrl(productUrl)) {
+          log(`Filtered out excluded URL: ${productUrl}`, 'DEBUG');
+          return; // Skip this container
+        }
+
         productLinks.push({
           url: productUrl,
           containerIndex: index,
@@ -613,6 +679,15 @@ const extractProductLinksFromList = ($, urlType) => {
         const productUrl = href.startsWith('http')
           ? href
           : `https://www.amazon.com${href}`;
+
+        // For store pages, filter out footer links and promotional products
+        if (urlType === 'store' && shouldExcludeStoreUrl(productUrl)) {
+          log(
+            `Filtered out excluded URL in direct search: ${productUrl}`,
+            'DEBUG'
+          );
+          return; // Skip this link
+        }
 
         productLinks.push({
           url: productUrl,
@@ -707,11 +782,26 @@ const processListPage = async (html, url) => {
     const errorDetails = `No products found on ${urlType} page. URL: ${url}`;
     log(errorDetails, 'ERROR');
 
-    // Provide more specific error message for store pages
+    // For store pages, check if this is a legitimate store with dynamic content
     if (urlType === 'store') {
-      throw new Error(
-        'No products found on store page. This store page may not contain product listings, may be using a different layout, or may require authentication to view products.'
-      );
+      // Check for store indicators in the HTML
+      const hasStoreIndicators =
+        html.includes('brandName') ||
+        html.includes('externalWidgetIds') ||
+        html.includes('stores-react') ||
+        html.includes('/stores/') ||
+        url.includes('/stores/');
+
+      if (hasStoreIndicators) {
+        log('Detected legitimate store page with dynamic content', 'INFO');
+        throw new Error(
+          'This appears to be a valid store page, but the products are loaded dynamically via JavaScript. The store may use external widgets or have products that are not visible in the static HTML. Try accessing individual product category pages within this store instead.'
+        );
+      } else {
+        throw new Error(
+          'No products found on store page. This store page may not contain product listings, may be using a different layout, or may require authentication to view products.'
+        );
+      }
     } else {
       throw new Error(`No products found on the ${urlType} page`);
     }
