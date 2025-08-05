@@ -167,8 +167,8 @@ const SCRAPING_CONFIG = {
   waitTime: 1000,
   userAgent:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  maxRetryAttempts: 3, // Increased retry attempts
-  retryDelay: 3000, // Increased delay between retries
+  maxRetryAttempts: 2,
+  retryDelay: 8000,
   headers: {
     Accept:
       'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -191,10 +191,11 @@ const LIST_PROCESSING_CONFIG = {
 
 // Timing constants for human-like behavior
 const TIMING_CONFIG = {
-  minInitialDelay: 1000, // Minimum delay for first attempt
-  maxInitialDelay: 3000, // Maximum delay for first attempt
-  maxRandomDelay: 2000, // Maximum additional random delay
-  delayProbability: 0.5, // Probability of adding delay on first attempt
+  minInitialDelay: 2000, // Minimum delay for first attempt
+  maxInitialDelay: 5000, // Maximum delay for first attempt
+  maxRandomDelay: 3000, // Maximum additional random delay
+  delayProbability: 0.8, // Probability of adding delay on first attempt
+  humanClickDelay: 500, // Simulate human click/interaction delay
 };
 
 // URL Type constants
@@ -831,7 +832,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       const cleanUrl = url.split('#')[0]; // Remove fragment only
       log(`Using clean URL: ${cleanUrl}`);
 
-      // Add random delay to mimic human behavior with better randomization
+      // Add random delay to mimic human behavior
       const baseDelay =
         attempt === 1
           ? Math.floor(
@@ -842,10 +843,19 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       const randomDelay =
         baseDelay + Math.floor(Math.random() * TIMING_CONFIG.maxRandomDelay);
 
-      if (attempt > 1 || Math.random() < TIMING_CONFIG.delayProbability) {
+      // Always add some delay for first attempt, higher probability for retries
+      const shouldDelay =
+        attempt === 1 ? Math.random() < TIMING_CONFIG.delayProbability : true; // Always delay on retries
+
+      if (shouldDelay) {
         log(`Waiting ${Math.round(randomDelay)}ms before request...`);
         await new Promise((resolve) => setTimeout(resolve, randomDelay));
       }
+
+      // Add a small human-like delay before making the actual request
+      await new Promise((resolve) =>
+        setTimeout(resolve, TIMING_CONFIG.humanClickDelay)
+      );
 
       // Make HTTP request to get the page with realistic headers
       log('Making HTTP request to Amazon...');
