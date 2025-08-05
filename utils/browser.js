@@ -21,7 +21,7 @@ const getRandomUserAgent = () => {
   ];
 };
 
-const getPageHtml = async (url) => {
+const getPageHtml = async (url, isStoreDerivative = false) => {
   return new Promise((resolve, reject) => {
     try {
       log(`Starting page retrieval for: ${url}`);
@@ -31,30 +31,39 @@ const getPageHtml = async (url) => {
 
       log(`Using User-Agent: ${selectedUserAgent.substring(0, 50)}...`);
 
+      const baseHeaders = {
+        'User-Agent': selectedUserAgent,
+        Accept:
+          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Cache-Control': 'max-age=0',
+        'Sec-Ch-Ua':
+          '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua-Mobile': '?0',
+        'Sec-Ch-Ua-Platform': '"Windows"',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Upgrade-Insecure-Requests': '1',
+        DNT: '1',
+        Connection: 'keep-alive',
+      };
+
+      // Add referrer for store-derived product links to make them look more natural
+      if (isStoreDerivative) {
+        baseHeaders['Referer'] = 'https://www.amazon.com/stores/';
+        baseHeaders['Sec-Fetch-Site'] = 'same-origin';
+      } else {
+        baseHeaders['Sec-Fetch-Site'] = 'none';
+        baseHeaders['Sec-Fetch-User'] = '?1';
+      }
+
       const options = {
         hostname: urlObj.hostname,
         port: 443,
         path: urlObj.pathname + urlObj.search,
         method: 'GET',
-        headers: {
-          'User-Agent': selectedUserAgent,
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Cache-Control': 'max-age=0',
-          'Sec-Ch-Ua':
-            '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"Windows"',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
-          DNT: '1',
-          Connection: 'keep-alive',
-        },
+        headers: baseHeaders,
         timeout: 45000,
       };
 

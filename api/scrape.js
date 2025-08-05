@@ -277,8 +277,58 @@ const detectUrlType = (url) => {
   return URL_TYPES.UNKNOWN;
 };
 
-const makeHttpRequest = async (url) => {
-  return getPageHtml(url);
+// Clean and normalize product URLs to avoid bot detection
+const cleanProductUrl = (url) => {
+  if (!url) return url;
+
+  try {
+    const urlObj = new URL(url);
+
+    // Fix malformed product URLs like /dp/product/ASIN to /dp/ASIN
+    urlObj.pathname = urlObj.pathname.replace(
+      /\/dp\/product\/([A-Z0-9]{10})/,
+      '/dp/$1'
+    );
+    urlObj.pathname = urlObj.pathname.replace(
+      /\/gp\/product\/([A-Z0-9]{10})/,
+      '/dp/$1'
+    );
+
+    const paramsToRemove = [];
+
+    for (const [key] of urlObj.searchParams) {
+      // Remove tracking parameters
+      if (
+        key.startsWith('plattr') ||
+        key.startsWith('pf_') ||
+        key.startsWith('tag') ||
+        key === 'linkCode' ||
+        key === 'camp' ||
+        key === 'creative' ||
+        key === 'creativeASIN' ||
+        key === 'ie' ||
+        key.includes('tracking') ||
+        key.includes('utm_')
+      ) {
+        paramsToRemove.push(key);
+      }
+    }
+
+    // Remove the problematic parameters
+    paramsToRemove.forEach((param) => urlObj.searchParams.delete(param));
+
+    // Remove fragment/hash
+    urlObj.hash = '';
+
+    return urlObj.toString();
+  } catch (error) {
+    // If URL parsing fails, do basic cleaning
+    return url.split('#')[0].split('?')[0];
+  }
+};
+
+const makeHttpRequest = async (url, isStoreDerivative = false) => {
+  return getPageHtml(url, isStoreDerivative);
 };
 
 // Extract text using CSS selectors with fallback support
@@ -682,15 +732,16 @@ const processListPage = async (html, url) => {
     try {
       log(`Processing product ${i + 1}/${maxProducts}: ${productUrl}`);
 
-      // Try to scrape individual product page
+      // Try to scrape individual product page with enhanced retry for store-derived URLs
       const productData = await scrapeAmazonProduct(productUrl, false); // false = don't process as list
       products.push(productData);
 
-      // Add delay between product requests
+      // Add longer delay between product requests from store pages to avoid triggering bot detection
       if (i < maxProducts - 1) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, LIST_PROCESSING_CONFIG.delayBetweenProducts)
-        );
+        const delayTime =
+          LIST_PROCESSING_CONFIG.delayBetweenProducts +
+          Math.floor(Math.random() * 2000); // Add 0-2s random delay
+        await new Promise((resolve) => setTimeout(resolve, delayTime));
       }
     } catch (error) {
       log(
@@ -828,8 +879,8 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
         throw new Error('Invalid Amazon URL - URL must contain "amazon."');
       }
 
-      // Clean URL but preserve important parameters
-      const cleanUrl = url.split('#')[0]; // Remove fragment only
+      // Clean and normalize URL
+      const cleanUrl = cleanProductUrl(url);
       log(`Using clean URL: ${cleanUrl}`);
 
       // Add random delay to mimic human behavior
@@ -861,7 +912,9 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       log('Making HTTP request to Amazon...');
       log('=== CALLING makeHttpRequest ===');
 
-      const html = await makeHttpRequest(cleanUrl);
+      // Detect if this is a store-derived product URL to use appropriate headers
+      const isStoreDerivative = urlType === URL_TYPES.PRODUCT && !processAsList;
+      const html = await makeHttpRequest(cleanUrl, isStoreDerivative);
       log('=== makeHttpRequest COMPLETED ===');
 
       if (!html || html.length < 1000) {
@@ -891,10 +944,15 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
         log(`Bot detection pattern found: ${detectedPattern}`, 'WARN');
         log('Continuing with data extraction despite bot detection...', 'INFO');
 
-        // For store pages, robot detection doesn't always mean complete failure
+        // For store pages and store-derived products, be more lenient with bot detection
         if (urlType === URL_TYPES.STORE) {
           log(
             'Store page with robot detection - will attempt extraction anyway',
+            'INFO'
+          );
+        } else if (urlType === URL_TYPES.PRODUCT && url.includes('ref_=')) {
+          log(
+            'Product page from store link with bot detection - continuing extraction',
             'INFO'
           );
         }
