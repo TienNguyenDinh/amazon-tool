@@ -1,8 +1,6 @@
-const https = require('https');
-const http = require('http');
 const { URL } = require('url');
 const cheerio = require('cheerio');
-const zlib = require('zlib');
+const { getPageHtml } = require('../utils/browser');
 
 // CSS Selector constants for easy editing
 const CSS_SELECTORS = {
@@ -100,16 +98,13 @@ const CSS_SELECTORS = {
     },
     store: {
       productContainers: [
-        // Based on diagnostic test - most effective selectors first
-        '[class*="item"]', // Found 247 elements
-        '[class*="card"]', // Found 85 elements
-        '[data-csa-c-type="widget"]', // Found 12 elements
-        '[class*="product"]', // Found 11 elements
-        '.celwidget', // Found 7 elements
-        '.octopus-pc-card', // Found 2 elements
-        '.a-cardui', // Found 2 elements
-
-        // Original selectors as fallbacks
+        '[class*="item"]',
+        '[class*="card"]',
+        '[data-csa-c-type="widget"]',
+        '[class*="product"]',
+        '.celwidget',
+        '.octopus-pc-card',
+        '.a-cardui',
         '[data-card-identifier]',
         '[data-testid*="product"]',
         '[data-testid*="card"]',
@@ -281,101 +276,8 @@ const detectUrlType = (url) => {
   return URL_TYPES.UNKNOWN;
 };
 
-// HTTP request helper function with compression support
-const makeHttpRequest = (url, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const isHttps = urlObj.protocol === 'https:';
-    const requestModule = isHttps ? https : http;
-
-    const requestOptions = {
-      hostname: urlObj.hostname,
-      port: urlObj.port || (isHttps ? 443 : 80),
-      path: urlObj.pathname + urlObj.search,
-      method: 'GET',
-      headers: {
-        'User-Agent': SCRAPING_CONFIG.userAgent,
-        ...SCRAPING_CONFIG.headers,
-        ...options.headers,
-      },
-      timeout: SCRAPING_CONFIG.timeout,
-    };
-
-    const req = requestModule.request(requestOptions, (res) => {
-      // Handle redirects
-      if (
-        res.statusCode >= 300 &&
-        res.statusCode < 400 &&
-        res.headers.location
-      ) {
-        const redirectUrl = new URL(res.headers.location, url).toString();
-        log(`Following redirect to: ${redirectUrl}`);
-        return makeHttpRequest(redirectUrl, options)
-          .then(resolve)
-          .catch(reject);
-      }
-
-      if (res.statusCode !== 200) {
-        let errorMessage = `HTTP ${res.statusCode}: ${res.statusMessage}`;
-        // Provide more specific error messages for common issues
-        if (res.statusCode === 429) {
-          errorMessage =
-            'Amazon rate limit exceeded - too many requests. Please wait a few minutes before trying again or reduce request frequency';
-        } else if (res.statusCode === 503) {
-          errorMessage =
-            'Amazon service temporarily unavailable - possible rate limiting or bot detection';
-        } else if (res.statusCode === 403) {
-          errorMessage =
-            'Access forbidden - Amazon may be blocking automated requests';
-        } else if (res.statusCode === 404) {
-          errorMessage =
-            'Product page not found - URL may be invalid or product removed';
-        } else if (res.statusCode >= 500) {
-          errorMessage = 'Amazon server error - please try again later';
-        }
-        reject(new Error(errorMessage));
-        return;
-      }
-
-      // Handle compressed responses
-      let stream = res;
-      const encoding = res.headers['content-encoding'];
-
-      if (encoding === 'gzip') {
-        stream = res.pipe(zlib.createGunzip());
-      } else if (encoding === 'deflate') {
-        stream = res.pipe(zlib.createInflate());
-      } else if (encoding === 'br') {
-        stream = res.pipe(zlib.createBrotliDecompress());
-      }
-
-      let data = '';
-      stream.setEncoding('utf8');
-
-      stream.on('data', (chunk) => {
-        data += chunk;
-      });
-
-      stream.on('end', () => {
-        resolve(data);
-      });
-
-      stream.on('error', (error) => {
-        reject(new Error(`Decompression failed: ${error.message}`));
-      });
-    });
-
-    req.on('error', (error) => {
-      reject(new Error(`Request failed: ${error.message}`));
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Request timeout'));
-    });
-
-    req.end();
-  });
+const makeHttpRequest = async (url) => {
+  return getPageHtml(url);
 };
 
 // Extract text using CSS selectors with fallback support
@@ -947,13 +849,10 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
 
       // Make HTTP request to get the page with realistic headers
       log('Making HTTP request to Amazon...');
-      const additionalHeaders = {
-        Referer: 'https://www.amazon.com/',
-        // Remove suspicious headers that might trigger bot detection
-      };
-      const html = await makeHttpRequest(cleanUrl, {
-        headers: additionalHeaders,
-      });
+      log('=== CALLING makeHttpRequest ===');
+
+      const html = await makeHttpRequest(cleanUrl);
+      log('=== makeHttpRequest COMPLETED ===');
 
       if (!html || html.length < 1000) {
         throw new Error(
@@ -1130,6 +1029,7 @@ module.exports = async (req, res) => {
   }
 
   try {
+    log('=== API HANDLER START ===');
     const { url } = req.body;
 
     if (!url) {
@@ -1143,7 +1043,9 @@ module.exports = async (req, res) => {
     log(`Scraper version: ${SCRAPER_VERSION}`);
 
     // Scrape product data
+    log('=== CALLING scrapeAmazonProduct ===');
     const productData = await scrapeAmazonProduct(url);
+    log('=== scrapeAmazonProduct COMPLETED ===');
 
     log('API request completed successfully');
 
@@ -1167,7 +1069,10 @@ module.exports = async (req, res) => {
       });
     }
   } catch (error) {
-    log(`API request failed: ${error.message}`, 'ERROR');
+    log('=== API HANDLER CAUGHT ERROR ===', 'ERROR');
+    log(`Error message: ${error.message}`, 'ERROR');
+    log(`Error stack: ${error.stack}`, 'ERROR');
+    log('=== END ERROR DEBUG ===', 'ERROR');
 
     // Determine appropriate status code based on error
     let statusCode = 500;
