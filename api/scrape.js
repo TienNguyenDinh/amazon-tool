@@ -1,6 +1,15 @@
 const { URL } = require('url');
 const cheerio = require('cheerio');
 const { getPageHtml } = require('../utils/browser');
+const { handleCors } = require('../utils/cors');
+const { log } = require('../utils/logger');
+const {
+  APP_CONFIG,
+  DEFAULT_VALUES,
+  RATE_LIMIT_CONFIG,
+  URL_TYPES,
+} = require('../utils/constants');
+const { detectUrlType, cleanProductUrl } = require('../utils/url-utils');
 
 // CSS Selector constants for easy editing
 const CSS_SELECTORS = {
@@ -209,12 +218,10 @@ const REGEX_PATTERNS = {
 
 // Configuration constants
 const SCRAPING_CONFIG = {
-  timeout: 45000, // Increased timeout for better reliability
+  timeout: APP_CONFIG.DEFAULT_TIMEOUT,
   waitTime: 1000,
-  userAgent:
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  maxRetryAttempts: 2,
-  retryDelay: 8000,
+  maxRetryAttempts: APP_CONFIG.MAX_RETRY_ATTEMPTS,
+  retryDelay: APP_CONFIG.RETRY_DELAY,
   headers: {
     Accept:
       'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
@@ -227,13 +234,13 @@ const SCRAPING_CONFIG = {
   },
 };
 
-// Rate limiting configuration
-const RATE_LIMIT_CONFIG = {
-  maxRateLimitRetries: 3, // Additional retries specifically for 429 errors
-  baseRateLimitDelay: 15000, // Base delay for 429 errors (15 seconds)
-  exponentialBackoffMultiplier: 2, // Multiplier for exponential backoff
-  maxRateLimitDelay: 120000, // Maximum delay for 429 errors (2 minutes)
-  respectRetryAfterHeader: true, // Whether to respect Retry-After header from server
+// Rate limiting configuration - using shared config
+const RATE_LIMIT_CONFIG_LOCAL = {
+  maxRateLimitRetries: RATE_LIMIT_CONFIG.MAX_RETRIES,
+  baseRateLimitDelay: RATE_LIMIT_CONFIG.BASE_DELAY,
+  exponentialBackoffMultiplier: RATE_LIMIT_CONFIG.EXPONENTIAL_MULTIPLIER,
+  maxRateLimitDelay: RATE_LIMIT_CONFIG.MAX_DELAY,
+  respectRetryAfterHeader: RATE_LIMIT_CONFIG.RESPECT_RETRY_AFTER,
 };
 
 // List page processing configuration
@@ -253,14 +260,7 @@ const TIMING_CONFIG = {
   humanClickDelay: 500, // Simulate human click/interaction delay
 };
 
-// URL Type constants
-const URL_TYPES = {
-  PRODUCT: 'product',
-  SEARCH: 'search',
-  CATEGORY: 'category',
-  STORE: 'store',
-  UNKNOWN: 'unknown',
-};
+// URL Type constants - using shared constants
 
 // Patterns to exclude from store page product extraction
 const STORE_URL_EXCLUSIONS = {
@@ -289,96 +289,35 @@ const STORE_URL_EXCLUSIONS = {
   ],
 };
 
-// Enhanced URL patterns for better detection
-const URL_PATTERNS = {
-  PRODUCT: [
-    /\/dp\/[A-Z0-9]{10}/,
-    /\/gp\/product\/[A-Z0-9]{10}/,
-    /\/product\/[A-Z0-9]{10}/,
-  ],
-  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/, /\/s$/],
-  CATEGORY: [
-    /\/gp\/bestsellers/,
-    /\/zgbs\//,
-    /\/Best-Sellers-/,
-    /\/gp\/top-sellers/,
-    /\/gp\/new-releases/,
-    /\/most-wished-for/,
-    /\/movers-and-shakers/,
-  ],
-  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
-};
+// Enhanced URL patterns for better detection - using shared patterns
 
-const DEFAULT_VALUES = {
-  notAvailable: 'N/A',
-  extractionFailed: 'Data extraction failed',
-};
+// Using shared DEFAULT_VALUES from constants
 
-// Simple logging function
-const log = (message, level = 'INFO') => {
-  console.log(`[${level}] ${message}`);
-};
+// Using shared logging function
 
 // Calculate delay for rate limiting with exponential backoff
 const calculateRateLimitDelay = (attempt, retryAfterMs = null) => {
-  if (RATE_LIMIT_CONFIG.respectRetryAfterHeader && retryAfterMs) {
+  if (RATE_LIMIT_CONFIG_LOCAL.respectRetryAfterHeader && retryAfterMs) {
     // Use server-suggested delay, but cap it at our maximum
-    return Math.min(retryAfterMs, RATE_LIMIT_CONFIG.maxRateLimitDelay);
+    return Math.min(retryAfterMs, RATE_LIMIT_CONFIG_LOCAL.maxRateLimitDelay);
   }
 
   // Calculate exponential backoff delay
   const exponentialDelay =
-    RATE_LIMIT_CONFIG.baseRateLimitDelay *
-    Math.pow(RATE_LIMIT_CONFIG.exponentialBackoffMultiplier, attempt - 1);
+    RATE_LIMIT_CONFIG_LOCAL.baseRateLimitDelay *
+    Math.pow(RATE_LIMIT_CONFIG_LOCAL.exponentialBackoffMultiplier, attempt - 1);
 
   // Cap the delay at maximum and add some jitter to avoid thundering herd
   const cappedDelay = Math.min(
     exponentialDelay,
-    RATE_LIMIT_CONFIG.maxRateLimitDelay
+    RATE_LIMIT_CONFIG_LOCAL.maxRateLimitDelay
   );
   const jitter = Math.random() * 0.1 * cappedDelay; // Up to 10% jitter
 
   return Math.floor(cappedDelay + jitter);
 };
 
-// Detect URL type based on patterns
-const detectUrlType = (url) => {
-  if (!url || typeof url !== 'string') {
-    return URL_TYPES.UNKNOWN;
-  }
-
-  const cleanUrl = url.trim();
-
-  // Check product patterns first (most specific)
-  for (const pattern of URL_PATTERNS.PRODUCT) {
-    if (pattern.test(cleanUrl)) {
-      return URL_TYPES.PRODUCT;
-    }
-  }
-
-  // Check search patterns
-  for (const pattern of URL_PATTERNS.SEARCH) {
-    if (pattern.test(cleanUrl)) {
-      return URL_TYPES.SEARCH;
-    }
-  }
-
-  // Check category patterns
-  for (const pattern of URL_PATTERNS.CATEGORY) {
-    if (pattern.test(cleanUrl)) {
-      return URL_TYPES.CATEGORY;
-    }
-  }
-
-  // Check store patterns
-  for (const pattern of URL_PATTERNS.STORE) {
-    if (pattern.test(cleanUrl)) {
-      return URL_TYPES.STORE;
-    }
-  }
-
-  return URL_TYPES.UNKNOWN;
-};
+// Using shared detectUrlType function
 
 // Check if a URL should be excluded from store product extraction
 const shouldExcludeStoreUrl = (url, title = '', isDirectSearch = false) => {
@@ -456,55 +395,7 @@ const shouldExcludeStoreUrl = (url, title = '', isDirectSearch = false) => {
   return false;
 };
 
-// Clean and normalize product URLs to avoid bot detection
-const cleanProductUrl = (url) => {
-  if (!url) return url;
-
-  try {
-    const urlObj = new URL(url);
-
-    // Fix malformed product URLs like /dp/product/ASIN to /dp/ASIN
-    urlObj.pathname = urlObj.pathname.replace(
-      /\/dp\/product\/([A-Z0-9]{10})/,
-      '/dp/$1'
-    );
-    urlObj.pathname = urlObj.pathname.replace(
-      /\/gp\/product\/([A-Z0-9]{10})/,
-      '/dp/$1'
-    );
-
-    const paramsToRemove = [];
-
-    for (const [key] of urlObj.searchParams) {
-      // Remove tracking parameters
-      if (
-        key.startsWith('plattr') ||
-        key.startsWith('pf_') ||
-        key.startsWith('tag') ||
-        key === 'linkCode' ||
-        key === 'camp' ||
-        key === 'creative' ||
-        key === 'creativeASIN' ||
-        key === 'ie' ||
-        key.includes('tracking') ||
-        key.includes('utm_')
-      ) {
-        paramsToRemove.push(key);
-      }
-    }
-
-    // Remove the problematic parameters
-    paramsToRemove.forEach((param) => urlObj.searchParams.delete(param));
-
-    // Remove fragment/hash
-    urlObj.hash = '';
-
-    return urlObj.toString();
-  } catch (error) {
-    // If URL parsing fails, do basic cleaning
-    return url.split('#')[0].split('?')[0];
-  }
-};
+// Using shared cleanProductUrl function
 
 const makeHttpRequest = async (url, isStoreDerivative = false) => {
   return getPageHtml(url, isStoreDerivative);
@@ -536,7 +427,7 @@ const extractTitle = ($) => {
   const titleText = extractTextWithSelectors($, CSS_SELECTORS.title, 'title');
 
   if (!titleText) {
-    return DEFAULT_VALUES.notAvailable;
+    return DEFAULT_VALUES.NOT_AVAILABLE;
   }
 
   // Clean title text and validate
@@ -546,7 +437,7 @@ const extractTitle = ($) => {
     return cleanedTitle;
   }
 
-  return DEFAULT_VALUES.notAvailable;
+  return DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract and format price
@@ -597,7 +488,7 @@ const extractPrice = ($) => {
   }
 
   log('No valid price found with any selector', 'WARN');
-  return DEFAULT_VALUES.notAvailable;
+  return DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract ASIN from URL or HTML data attributes
@@ -628,7 +519,7 @@ const extractAsin = ($, url) => {
     return htmlMatch[1] || htmlMatch[2];
   }
 
-  return DEFAULT_VALUES.notAvailable;
+  return DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract and format rating
@@ -640,7 +531,7 @@ const extractRating = ($) => {
   );
 
   if (!ratingText) {
-    return DEFAULT_VALUES.notAvailable;
+    return DEFAULT_VALUES.NOT_AVAILABLE;
   }
 
   // Extract numeric rating using regex
@@ -657,7 +548,7 @@ const extractRating = ($) => {
     return ratingText;
   }
 
-  return DEFAULT_VALUES.notAvailable;
+  return DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract and format review count
@@ -697,15 +588,15 @@ const extractReviewCount = ($) => {
   }
 
   log('No review count found with any selector', 'WARN');
-  return DEFAULT_VALUES.notAvailable;
+  return DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract ASIN from product URL
 const extractAsinFromUrl = (url) => {
-  if (!url) return DEFAULT_VALUES.notAvailable;
+  if (!url) return DEFAULT_VALUES.NOT_AVAILABLE;
 
   const asinMatch = url.match(REGEX_PATTERNS.asinFromUrl);
-  return asinMatch ? asinMatch[1] : DEFAULT_VALUES.notAvailable;
+  return asinMatch ? asinMatch[1] : DEFAULT_VALUES.NOT_AVAILABLE;
 };
 
 // Extract product URLs from dynamic content (JavaScript, JSON, data attributes)
@@ -1192,11 +1083,11 @@ const extractProductLinksFromList = ($, urlType) => {
 // Extract basic product info from list page item (fallback data)
 const extractListItemData = ($container, selectors, productUrl) => {
   const listItemData = {
-    title: DEFAULT_VALUES.notAvailable,
-    price: DEFAULT_VALUES.notAvailable,
-    asin: DEFAULT_VALUES.notAvailable,
-    rating: DEFAULT_VALUES.notAvailable,
-    reviewCount: DEFAULT_VALUES.notAvailable,
+    title: DEFAULT_VALUES.NOT_AVAILABLE,
+    price: DEFAULT_VALUES.NOT_AVAILABLE,
+    asin: DEFAULT_VALUES.NOT_AVAILABLE,
+    rating: DEFAULT_VALUES.NOT_AVAILABLE,
+    reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
     url: productUrl,
     isListData: true,
   };
@@ -1317,10 +1208,10 @@ const processListPage = async (html, url) => {
               // Try to get basic product info from the URL
               const basicProductInfo = {
                 title: 'Product from store (dynamic)',
-                price: DEFAULT_VALUES.notAvailable,
+                price: DEFAULT_VALUES.NOT_AVAILABLE,
                 asin: extractAsinFromUrl(productUrl),
-                rating: DEFAULT_VALUES.notAvailable,
-                reviewCount: DEFAULT_VALUES.notAvailable,
+                rating: DEFAULT_VALUES.NOT_AVAILABLE,
+                reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
                 url: productUrl,
                 source: 'dynamic-store-extraction',
               };
@@ -1441,11 +1332,11 @@ const processListPage = async (html, url) => {
           products.push({
             error: `Product extraction failed: ${error.message}`,
             url: productUrl,
-            title: DEFAULT_VALUES.extractionFailed,
-            price: DEFAULT_VALUES.notAvailable,
-            asin: DEFAULT_VALUES.notAvailable,
-            rating: DEFAULT_VALUES.notAvailable,
-            reviewCount: DEFAULT_VALUES.notAvailable,
+            title: DEFAULT_VALUES.EXTRACTION_FAILED,
+            price: DEFAULT_VALUES.NOT_AVAILABLE,
+            asin: DEFAULT_VALUES.NOT_AVAILABLE,
+            rating: DEFAULT_VALUES.NOT_AVAILABLE,
+            reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
           });
         }
       } else {
@@ -1453,11 +1344,11 @@ const processListPage = async (html, url) => {
         products.push({
           error: `Product extraction failed: ${error.message}`,
           url: productUrl,
-          title: DEFAULT_VALUES.extractionFailed,
-          price: DEFAULT_VALUES.notAvailable,
-          asin: DEFAULT_VALUES.notAvailable,
-          rating: DEFAULT_VALUES.notAvailable,
-          reviewCount: DEFAULT_VALUES.notAvailable,
+          title: DEFAULT_VALUES.EXTRACTION_FAILED,
+          price: DEFAULT_VALUES.NOT_AVAILABLE,
+          asin: DEFAULT_VALUES.NOT_AVAILABLE,
+          rating: DEFAULT_VALUES.NOT_AVAILABLE,
+          reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
         });
       }
     }
@@ -1476,11 +1367,11 @@ const extractProductData = (html, url) => {
   log('Starting data extraction from HTML using CSS selectors');
 
   const productData = {
-    title: DEFAULT_VALUES.notAvailable,
-    price: DEFAULT_VALUES.notAvailable,
-    asin: DEFAULT_VALUES.notAvailable,
-    rating: DEFAULT_VALUES.notAvailable,
-    reviewCount: DEFAULT_VALUES.notAvailable,
+    title: DEFAULT_VALUES.NOT_AVAILABLE,
+    price: DEFAULT_VALUES.NOT_AVAILABLE,
+    asin: DEFAULT_VALUES.NOT_AVAILABLE,
+    rating: DEFAULT_VALUES.NOT_AVAILABLE,
+    reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
     url: url,
   };
 
@@ -1507,11 +1398,11 @@ const extractProductData = (html, url) => {
     // Return basic data with ASIN from URL if available for error cases
     const asinMatch = url.match(REGEX_PATTERNS.asinFromUrl);
     return {
-      title: DEFAULT_VALUES.extractionFailed,
-      price: DEFAULT_VALUES.notAvailable,
-      asin: asinMatch ? asinMatch[1] : DEFAULT_VALUES.notAvailable,
-      rating: DEFAULT_VALUES.notAvailable,
-      reviewCount: DEFAULT_VALUES.notAvailable,
+      title: DEFAULT_VALUES.EXTRACTION_FAILED,
+      price: DEFAULT_VALUES.NOT_AVAILABLE,
+      asin: asinMatch ? asinMatch[1] : DEFAULT_VALUES.NOT_AVAILABLE,
+      rating: DEFAULT_VALUES.NOT_AVAILABLE,
+      reviewCount: DEFAULT_VALUES.NOT_AVAILABLE,
       url: url,
     };
   }
@@ -1655,8 +1546,8 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
 
             // For store pages, be more lenient with validation
             if (
-              productData.title !== DEFAULT_VALUES.notAvailable &&
-              productData.title !== DEFAULT_VALUES.extractionFailed
+              productData.title !== DEFAULT_VALUES.NOT_AVAILABLE &&
+              productData.title !== DEFAULT_VALUES.EXTRACTION_FAILED
             ) {
               log('Successfully extracted store page as individual page');
               return productData;
@@ -1671,9 +1562,9 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
 
         // Validate that we extracted meaningful data
         if (
-          productData.title === DEFAULT_VALUES.notAvailable &&
-          productData.price === DEFAULT_VALUES.notAvailable &&
-          productData.rating === DEFAULT_VALUES.notAvailable
+          productData.title === DEFAULT_VALUES.NOT_AVAILABLE &&
+          productData.price === DEFAULT_VALUES.NOT_AVAILABLE &&
+          productData.rating === DEFAULT_VALUES.NOT_AVAILABLE
         ) {
           throw new Error(
             'No product data could be extracted - page structure may have changed'
@@ -1691,7 +1582,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       if (error.message.includes('HTTP_429_RATE_LIMIT')) {
         rateLimitAttempts++;
 
-        if (rateLimitAttempts <= RATE_LIMIT_CONFIG.maxRateLimitRetries) {
+        if (rateLimitAttempts <= RATE_LIMIT_CONFIG_LOCAL.maxRateLimitRetries) {
           // Extract retry-after value if present
           const retryAfterMatch = error.message.match(/RETRY_AFTER_(\d+)/);
           const retryAfterMs = retryAfterMatch
@@ -1705,7 +1596,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
 
           log(
             `Rate limit hit (attempt ${rateLimitAttempts}/${
-              RATE_LIMIT_CONFIG.maxRateLimitRetries
+              RATE_LIMIT_CONFIG_LOCAL.maxRateLimitRetries
             }). Waiting ${Math.round(rateLimitDelay / 1000)}s before retry...`,
             'WARN'
           );
@@ -1716,7 +1607,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
           continue;
         } else {
           log(
-            `Exceeded maximum rate limit retries (${RATE_LIMIT_CONFIG.maxRateLimitRetries})`,
+            `Exceeded maximum rate limit retries (${RATE_LIMIT_CONFIG_LOCAL.maxRateLimitRetries})`,
             'ERROR'
           );
           break;
@@ -1790,26 +1681,11 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
   throw lastError;
 };
 
-// Version identifier for debugging
-const SCRAPER_VERSION = '2.1.0-store-working';
-
 // API handler with proper error handling
 module.exports = async (req, res) => {
-  // Enable CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({
-      error: 'Method not allowed',
-      message: 'Only POST requests are supported',
-    });
+  // Handle CORS and method validation
+  if (!handleCors(req, res, 'POST')) {
+    return; // Response already sent by CORS handler
   }
 
   try {
@@ -1824,7 +1700,7 @@ module.exports = async (req, res) => {
     }
 
     log(`API request received for: ${url}`);
-    log(`Scraper version: ${SCRAPER_VERSION}`);
+    log(`Scraper version: ${APP_CONFIG.VERSION}`);
 
     // Scrape product data
     log('=== CALLING scrapeAmazonProduct ===');

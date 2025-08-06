@@ -9,49 +9,8 @@ const progressFill = document.querySelector('.progress-fill');
 const resultsSection = document.getElementById('results-section');
 const resultsTBody = document.getElementById('results-tbody');
 
-// Configuration constants
-const MAGIC_BUTTON_TEXT = 'Magic Button';
-
-// URL type detection constants
-const URL_TYPE = {
-  PRODUCT: 'product',
-  SEARCH: 'search',
-  CATEGORY: 'category',
-  STORE: 'store',
-  UNKNOWN: 'unknown',
-};
-
-const URL_LIMITS = {
-  MAX_TOTAL_URLS: 15,
-  MIN_URLS: 1,
-};
-
-// URL pattern detection
-const URL_PATTERNS = {
-  PRODUCT: [
-    /\/dp\/[A-Z0-9]{10}/,
-    /\/gp\/product\/[A-Z0-9]{10}/,
-    /\/product\/[A-Z0-9]{10}/,
-  ],
-  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/],
-  CATEGORY: [
-    /\/gp\/bestsellers/,
-    /\/zgbs\//,
-    /\/Best-Sellers-/,
-    /\/gp\/top-sellers/,
-  ],
-  STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
-};
-
-// Progress bar constants to avoid magic numbers
-const PROGRESS_CONFIG = {
-  MIN_VALUE: 0,
-  MAX_VALUE: 100,
-  INITIAL_VALUE: 5,
-  INCREMENT_STEP: 2,
-  FAST_INCREMENT_STEP: 5,
-  COMPLETION_THRESHOLD: 95,
-};
+// Configuration constants loaded from external file
+// Note: constants.js should be loaded before this script
 
 // Progress controller state
 let progressController = {
@@ -61,61 +20,7 @@ let progressController = {
   startTime: null,
 };
 
-// Configuration constants optimized for Vercel deployment
-const API_CONFIG = {
-  baseUrl: window.location.origin,
-  scrapeEndpoint: '/api/scrape',
-  timeout: 45000, // Increased from 60000 but kept under Vercel's limits
-};
-
-// Timing constants for natural progress animation
-const PROGRESS_TIMING = {
-  UPDATE_INTERVAL: 100, // How often to update progress (ms)
-  SLOW_PHASE_DURATION: 3000, // Duration for slow initial progress (ms)
-  FAST_PHASE_DURATION: 1500, // Duration for faster completion phase (ms)
-  COMPLETION_DISPLAY_TIME: 800, // Time to show 100% before hiding (ms)
-  RESULTS_DELAY: 300, // Delay before showing results after 100% (ms)
-};
-
-const STATUS_MESSAGES = {
-  scraping: 'Processing Amazon URLs...',
-  scrapingProduct: 'Scraping Amazon product data...',
-  scrapingSearch: 'Processing Amazon search results...',
-  scrapingCategory: 'Processing Amazon category page...',
-  scrapingStore: 'Processing Amazon store page...',
-  processing: 'Processing URL {current} of {total} ({type})...',
-  generating: 'Processing extracted data...',
-  displaying: 'Success! Displaying product information...',
-  displayingList: 'Success! Displaying {count} products from list pages...',
-  error: 'Error occurred while scraping',
-  invalidUrl: 'Please enter a valid Amazon URL',
-  networkError: 'Network error. Please check your connection and try again.',
-  timeout:
-    'Request timed out. The page may be taking too long to load or Amazon may be blocking requests.',
-  captcha: 'Amazon detected automated access. Please try again later.',
-  rateLimit:
-    'Amazon rate limit exceeded. Please wait a few minutes before trying again.',
-  serverError: 'Server error occurred. Please try again.',
-  serviceUnavailable:
-    'Service temporarily unavailable. Please try again in a moment.',
-  browserError: 'Browser initialization failed. Please try again.',
-  extractionError:
-    'Could not extract product data. Please verify this is a valid Amazon page.',
-  partialSuccess: 'Some URLs could not be processed. Check individual results.',
-  partialListSuccess:
-    'Extracted {success} of {total} products. Some products could not be processed.',
-  urlTypesDetected: 'Detected URL types: {summary}',
-};
-
-// Column display configuration with order and CSS classes
-const COLUMN_CONFIG = [
-  { key: 'title', className: 'title-cell' },
-  { key: 'price', className: 'price-cell' },
-  { key: 'asin', className: 'asin-cell' },
-  { key: 'rating', className: 'rating-cell' },
-  { key: 'reviewCount', className: 'reviews-cell' },
-  { key: 'url', className: 'url-cell' },
-];
+// Constants loaded from external constants.js file
 
 // Utility functions
 const showStatus = (message, type = 'info') => {
@@ -728,11 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
   amazonUrlsTextarea.focus();
 });
 
-// URL detection constants for paste handling
-const URL_VALIDATION = {
-  URL_PATTERN: /https?:\/\/[^\s]+/g,
-  AMAZON_PATTERN: /amazon\./i,
-};
+// URL validation constants loaded from constants.js
 
 // Handle paste events to automatically clean URLs and add new lines in unified input
 amazonUrlsTextarea.addEventListener('paste', (event) => {

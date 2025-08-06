@@ -1,12 +1,10 @@
 // Simple test endpoint for browser functionality
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+const { handleCors } = require('../utils/cors');
 
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+module.exports = async (req, res) => {
+  // Handle CORS and method validation
+  if (!handleCors(req, res, 'GET')) {
+    return; // Response already sent by CORS handler
   }
 
   try {

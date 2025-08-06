@@ -1,5 +1,6 @@
 const https = require('https');
 const { URL } = require('url');
+const { USER_AGENTS, APP_CONFIG } = require('./constants');
 
 // Fallback HTTP-only scraper (for emergencies)
 const getPageHtmlFallback = async (url) => {
@@ -12,8 +13,7 @@ const getPageHtmlFallback = async (url) => {
       path: urlObj.pathname + urlObj.search,
       method: 'GET',
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': USER_AGENTS[0], // Use first user agent as fallback
         Accept:
           'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
@@ -21,7 +21,7 @@ const getPageHtmlFallback = async (url) => {
         Connection: 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
       },
-      timeout: 30000,
+      timeout: APP_CONFIG.DEFAULT_TIMEOUT - 15000, // Shorter timeout for fallback
     };
 
     const req = https.request(options, (res) => {

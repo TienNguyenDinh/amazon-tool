@@ -1,34 +1,26 @@
 const https = require('https');
 const { URL } = require('url');
 const zlib = require('zlib');
-
-const log = (message, level = 'INFO') => {
-  console.log(`[${level}] [Browser] ${message}`);
-};
-
-const REALISTIC_USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-];
+const { log } = require('./logger');
+const { USER_AGENTS, APP_CONFIG } = require('./constants');
 
 const getRandomUserAgent = () => {
-  return REALISTIC_USER_AGENTS[
-    Math.floor(Math.random() * REALISTIC_USER_AGENTS.length)
-  ];
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 };
 
 const getPageHtml = async (url, isStoreDerivative = false) => {
   return new Promise((resolve, reject) => {
     try {
-      log(`Starting page retrieval for: ${url}`);
+      log(`Starting page retrieval for: ${url}`, 'INFO', 'Browser');
 
       const urlObj = new URL(url);
       const selectedUserAgent = getRandomUserAgent();
 
-      log(`Using User-Agent: ${selectedUserAgent.substring(0, 50)}...`);
+      log(
+        `Using User-Agent: ${selectedUserAgent.substring(0, 50)}...`,
+        'INFO',
+        'Browser'
+      );
 
       const baseHeaders = {
         'User-Agent': selectedUserAgent,
@@ -63,7 +55,7 @@ const getPageHtml = async (url, isStoreDerivative = false) => {
         path: urlObj.pathname + urlObj.search,
         method: 'GET',
         headers: baseHeaders,
-        timeout: 45000,
+        timeout: APP_CONFIG.DEFAULT_TIMEOUT,
       };
 
       const req = https.request(options, (res) => {
@@ -74,7 +66,7 @@ const getPageHtml = async (url, isStoreDerivative = false) => {
           res.headers.location
         ) {
           const redirectUrl = new URL(res.headers.location, url).toString();
-          log(`Following redirect to: ${redirectUrl}`);
+          log(`Following redirect to: ${redirectUrl}`, 'INFO', 'Browser');
           return getPageHtml(redirectUrl).then(resolve).catch(reject);
         }
 
@@ -124,7 +116,9 @@ const getPageHtml = async (url, isStoreDerivative = false) => {
           }
 
           log(
-            `Successfully retrieved content (${data.length} characters) via HTTPS`
+            `Successfully retrieved content (${data.length} characters) via HTTPS`,
+            'INFO',
+            'Browser'
           );
           resolve(data);
         });
