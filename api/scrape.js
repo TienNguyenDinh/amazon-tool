@@ -316,8 +316,7 @@ const DEFAULT_VALUES = {
 
 // Simple logging function
 const log = (message, level = 'INFO') => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [${level}] ${message}`);
+  console.log(`[${level}] ${message}`);
 };
 
 // Calculate delay for rate limiting with exponential backoff

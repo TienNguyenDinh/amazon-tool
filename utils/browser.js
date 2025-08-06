@@ -3,8 +3,7 @@ const { URL } = require('url');
 const zlib = require('zlib');
 
 const log = (message, level = 'INFO') => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] [${level}] [Browser] ${message}`);
+  console.log(`[${level}] [Browser] ${message}`);
 };
 
 const REALISTIC_USER_AGENTS = [
