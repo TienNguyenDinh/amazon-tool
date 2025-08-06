@@ -69,6 +69,47 @@ const COLUMN_CONFIG = [
   { key: 'url', className: 'url-cell' },
 ];
 
+// Progress phases for detailed tracking
+const PROGRESS_PHASES = {
+  INITIALIZING: {
+    percentage: 5,
+    message: '🚀 Getting ready to visit Amazon...',
+  },
+  URL_VALIDATION: {
+    percentage: 10,
+    message: '🔍 Checking URL format and detecting page type...',
+  },
+  REQUEST_PREPARATION: {
+    percentage: 15,
+    message: '⚙️ Preparing request with proper headers...',
+  },
+  NETWORK_DELAY: {
+    percentage: 20,
+    message: '⏳ Adding natural delay to respect rate limits...',
+  },
+  FETCHING_PAGE: {
+    percentage: 35,
+    message: '📥 Downloading page content from Amazon...',
+  },
+  PAGE_ANALYSIS: {
+    percentage: 50,
+    message: '🔎 Analyzing page structure and content...',
+  },
+  DATA_EXTRACTION: {
+    percentage: 65,
+    message: '📊 Extracting product information...',
+  },
+  PROCESSING_RESULTS: {
+    percentage: 80,
+    message: '⚡ Processing and organizing data...',
+  },
+  FINALIZING: {
+    percentage: 95,
+    message: '🎯 Finishing up and preparing results...',
+  },
+  COMPLETE: { percentage: 100, message: '✅ Complete! Displaying results...' },
+};
+
 // Status messages
 const STATUS_MESSAGES = {
   scraping: 'Processing Amazon URLs...',
@@ -98,6 +139,16 @@ const STATUS_MESSAGES = {
   partialListSuccess:
     'Extracted {success} of {total} products. Some products could not be processed.',
   urlTypesDetected: 'Detected URL types: {summary}',
+
+  // Detailed phase messages
+  listProcessing: 'Found {count} products on page, extracting details...',
+  productDetails: 'Extracting product {current} of {total}: {title}...',
+  retryAttempt: 'First attempt failed, trying again with different approach...',
+  delayWaiting: "Waiting {seconds}s to respect Amazon's rate limits...",
+  fallbackMode: 'Using backup extraction method...',
+  networkRequest: 'Connecting to Amazon servers...',
+  htmlProcessing: 'Processing {size}KB of page data...',
+  selectorSearch: 'Looking for product information on the page...',
 };
 
 // Magic button text

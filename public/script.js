@@ -12,17 +12,17 @@ const resultsTBody = document.getElementById('results-tbody');
 // Configuration constants loaded from external file
 // Note: constants.js should be loaded before this script
 
-// Progress controller state
 let progressController = {
   currentValue: PROGRESS_CONFIG.MIN_VALUE,
   intervalId: null,
   isComplete: false,
   startTime: null,
+  currentPhase: null,
+  urlIndex: 0,
+  totalUrls: 0,
+  isDetailedMode: false,
 };
 
-// Constants loaded from external constants.js file
-
-// Utility functions
 const showStatus = (message, type = 'info') => {
   statusMessage.textContent = message;
   statusMessage.className = `status-message ${type}`;
@@ -46,6 +46,10 @@ const resetProgressController = () => {
   progressController.currentValue = PROGRESS_CONFIG.MIN_VALUE;
   progressController.isComplete = false;
   progressController.startTime = null;
+  progressController.currentPhase = null;
+  progressController.urlIndex = 0;
+  progressController.totalUrls = 0;
+  progressController.isDetailedMode = false;
 };
 
 const updateProgressDisplay = (percentage) => {
@@ -59,44 +63,14 @@ const updateProgressDisplay = (percentage) => {
   }
 };
 
+// Legacy progress function - kept for compatibility but now uses detailed progress
 const startGradualProgress = () => {
   try {
-    resetProgressController();
-    if (!progressBar || !progressFill) {
-      console.error('Progress bar elements not found');
-      return;
-    }
-
-    progressBar.classList.remove('hidden');
-    progressController.startTime = Date.now();
-
-    updateProgressDisplay(PROGRESS_CONFIG.INITIAL_VALUE);
-    progressController.currentValue = PROGRESS_CONFIG.INITIAL_VALUE;
-
-    progressController.intervalId = setInterval(() => {
-      const elapsed = Date.now() - progressController.startTime;
-      const isSlowPhase = elapsed < PROGRESS_TIMING.SLOW_PHASE_DURATION;
-
-      if (progressController.currentValue >= PROGRESS_CONFIG.MAX_VALUE) {
-        progressController.isComplete = true;
-        clearProgressInterval();
-        return;
-      }
-
-      // Use different increment speeds for natural feeling
-      const increment = isSlowPhase
-        ? PROGRESS_CONFIG.INCREMENT_STEP
-        : PROGRESS_CONFIG.FAST_INCREMENT_STEP;
-
-      // Slow down as we approach completion for natural feel
-      const slowdownFactor =
-        progressController.currentValue > PROGRESS_CONFIG.COMPLETION_THRESHOLD
-          ? 0.5
-          : 1;
-      const actualIncrement = increment * slowdownFactor;
-
-      updateProgressDisplay(progressController.currentValue + actualIncrement);
-    }, PROGRESS_TIMING.UPDATE_INTERVAL);
+    console.warn(
+      'startGradualProgress is deprecated, use initializeDetailedProgress instead'
+    );
+    // Fallback to detailed progress with single URL
+    initializeDetailedProgress(1);
   } catch (error) {
     console.error('Error starting gradual progress:', error);
   }
@@ -134,6 +108,96 @@ const hideProgress = () => {
     resetProgressController();
     updateProgressDisplay(PROGRESS_CONFIG.MIN_VALUE);
   }, PROGRESS_TIMING.COMPLETION_DISPLAY_TIME);
+};
+
+// Detailed progress management functions
+const initializeDetailedProgress = (totalUrls) => {
+  progressController.isDetailedMode = true;
+  progressController.totalUrls = totalUrls;
+  progressController.urlIndex = 0;
+
+  resetProgressController();
+  if (progressBar) {
+    progressBar.classList.remove('hidden');
+  }
+
+  // Start with initialization phase
+  updateProgressPhase('INITIALIZING');
+};
+
+const updateProgressPhase = (phaseName, customMessage = null) => {
+  const phase = PROGRESS_PHASES[phaseName];
+  if (!phase) {
+    console.warn(`Unknown progress phase: ${phaseName}`);
+    return;
+  }
+
+  progressController.currentPhase = phaseName;
+
+  // Calculate adjusted percentage based on current URL
+  let adjustedPercentage = phase.percentage;
+  if (progressController.totalUrls > 1) {
+    const urlProgress =
+      (progressController.urlIndex / progressController.totalUrls) * 100;
+    const phaseContribution = phase.percentage / progressController.totalUrls;
+    adjustedPercentage = urlProgress + phaseContribution;
+  }
+
+  updateProgressDisplay(
+    Math.min(adjustedPercentage, PROGRESS_CONFIG.MAX_VALUE)
+  );
+
+  const message = customMessage || phase.message;
+  showStatus(message, 'info');
+};
+
+const advanceToNextUrl = () => {
+  progressController.urlIndex++;
+
+  if (progressController.urlIndex >= progressController.totalUrls) {
+    updateProgressPhase('COMPLETE');
+    return true; // All URLs processed
+  }
+
+  return false; // More URLs to process
+};
+
+const simulateDetailedProgress = async (urlType, urlIndex, totalUrls) => {
+  if (!progressController.isDetailedMode) return;
+
+  progressController.urlIndex = urlIndex;
+
+  const phases = ['URL_VALIDATION', 'REQUEST_PREPARATION'];
+
+  // Add network delay phase for first URL or when there are delays
+  if (
+    urlIndex === 0 ||
+    urlType === URL_TYPE.SEARCH ||
+    urlType === URL_TYPE.CATEGORY
+  ) {
+    phases.push('NETWORK_DELAY');
+  }
+
+  phases.push('FETCHING_PAGE', 'PAGE_ANALYSIS', 'DATA_EXTRACTION');
+
+  for (const phase of phases) {
+    updateProgressPhase(phase);
+
+    // Simulate realistic timing for each phase
+    const delay =
+      phase === 'FETCHING_PAGE'
+        ? 800
+        : phase === 'DATA_EXTRACTION'
+        ? 600
+        : phase === 'NETWORK_DELAY'
+        ? 1200
+        : 300;
+
+    await new Promise((resolve) => setTimeout(resolve, delay));
+
+    // Break if not in detailed mode anymore (operation cancelled)
+    if (!progressController.isDetailedMode) break;
+  }
 };
 
 const setButtonState = (isLoading) => {
@@ -403,8 +467,9 @@ const processUnifiedUrls = async (urlData) => {
   try {
     // Update UI state
     setButtonState(true);
-    showStatus(STATUS_MESSAGES.scraping, 'info');
-    startGradualProgress();
+
+    // Initialize detailed progress tracking
+    initializeDetailedProgress(urlData.urls.length);
 
     // Show detected URL types
     if (urlData.summary) {
@@ -412,7 +477,7 @@ const processUnifiedUrls = async (urlData) => {
         STATUS_MESSAGES.urlTypesDetected.replace('{summary}', urlData.summary),
         'info'
       );
-      await new Promise((resolve) => setTimeout(resolve, 200)); // Show for 200ms
+      await new Promise((resolve) => setTimeout(resolve, 800)); // Show longer for user to read
     }
 
     // Hide previous results
@@ -426,31 +491,15 @@ const processUnifiedUrls = async (urlData) => {
       const urlItem = urlData.urls[i];
       const { url, type } = urlItem;
 
-      // Get appropriate status message based on URL type
-      let typeSpecificMessage;
-      switch (type) {
-        case URL_TYPE.PRODUCT:
-          typeSpecificMessage = STATUS_MESSAGES.scrapingProduct;
-          break;
-        case URL_TYPE.SEARCH:
-          typeSpecificMessage = STATUS_MESSAGES.scrapingSearch;
-          break;
-        case URL_TYPE.CATEGORY:
-          typeSpecificMessage = STATUS_MESSAGES.scrapingCategory;
-          break;
-        case URL_TYPE.STORE:
-          typeSpecificMessage = STATUS_MESSAGES.scrapingStore;
-          break;
-        default:
-          typeSpecificMessage = STATUS_MESSAGES.scraping;
-      }
-
-      // Update status to show current progress with type
+      // Show which URL we're working on
       const progressMessage = STATUS_MESSAGES.processing
         .replace('{current}', i + 1)
         .replace('{total}', totalUrls)
         .replace('{type}', type);
       showStatus(progressMessage, 'info');
+
+      // Run detailed progress simulation in parallel with actual request
+      const progressPromise = simulateDetailedProgress(type, i, totalUrls);
 
       try {
         // Make API request for single URL (the backend API remains the same)
@@ -470,7 +519,14 @@ const processUnifiedUrls = async (urlData) => {
           if (responseData.success && responseData.data) {
             // Handle both single product and list results
             if (responseData.isListResult && Array.isArray(responseData.data)) {
-              // List page result - add each product with metadata
+              // List page result - show friendly message about found products
+              const productCount = responseData.data.length;
+              updateProgressPhase(
+                'DATA_EXTRACTION',
+                STATUS_MESSAGES.listProcessing.replace('{count}', productCount)
+              );
+
+              // Add each product with metadata
               responseData.data.forEach((productData, productIndex) => {
                 const enrichedData = {
                   ...productData,
@@ -482,7 +538,12 @@ const processUnifiedUrls = async (urlData) => {
                 results.push(enrichedData);
               });
             } else {
-              // Single product result
+              // Single product result - show what we extracted
+              updateProgressPhase(
+                'DATA_EXTRACTION',
+                `Extracted: ${responseData.data.title || 'Product details'}`
+              );
+
               const enrichedData = {
                 ...responseData.data,
                 urlType: type,
@@ -525,21 +586,36 @@ const processUnifiedUrls = async (urlData) => {
         });
       }
 
-      // Add delay between requests based on URL type (search/category may need longer delays)
-      if (i < urlData.urls.length - 1) {
+      // Wait for progress simulation to complete
+      await progressPromise;
+
+      // Advance to next URL or complete
+      const isComplete = advanceToNextUrl();
+
+      // Add delay between requests based on URL type
+      if (!isComplete) {
         const delay =
           type === URL_TYPE.SEARCH || type === URL_TYPE.CATEGORY ? 25 : 15;
+        updateProgressPhase(
+          'NETWORK_DELAY',
+          STATUS_MESSAGES.delayWaiting.replace(
+            '{seconds}',
+            (delay / 1000).toFixed(1)
+          )
+        );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
-    // Update status for processing
-    showStatus(STATUS_MESSAGES.generating, 'info');
+    // Update status for final processing
+    updateProgressPhase('PROCESSING_RESULTS', STATUS_MESSAGES.generating);
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // Complete progress and display results
-    completeProgress(() => {
+    updateProgressPhase('COMPLETE');
+    setTimeout(() => {
       displayResults(results);
-    });
+    }, 200);
 
     return results;
   } catch (error) {
