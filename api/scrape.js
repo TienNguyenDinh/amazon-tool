@@ -98,9 +98,27 @@ const CSS_SELECTORS = {
     },
     store: {
       productContainers: [
+        // Dynamic content containers (prioritize more specific selectors)
+        '[data-cy="aplus-module"]',
+        '[data-module-type="ProductGrid"]',
+        '[data-csa-c-type="widget"]',
+        '[data-widget="ProductGrid"]',
+        '[data-widget]',
+        '.aplus-module',
+        '.aplus-v2',
+
+        // Store-specific containers
+        '[data-testid*="storefront"]',
+        '[data-testid*="grid"]',
+        '[data-testid*="carousel"]',
+        '[class*="storefront"]',
+        '[class*="widget"]',
+        '[data-component*="product"]',
+        '[class*="store"]',
+
+        // Product containers
         '[class*="item"]',
         '[class*="card"]',
-        '[data-csa-c-type="widget"]',
         '[class*="product"]',
         '.celwidget',
         '.octopus-pc-card',
@@ -113,12 +131,31 @@ const CSS_SELECTORS = {
         '[class*="ProductCard"]',
         '[class*="product-card"]',
         '[data-component-type*="product"]',
+
+        // Additional dynamic containers
+        '[data-automation-id*="product"]',
+        '[data-cy*="product"]',
+        '.fresh-container',
+        '.fresh-card',
+
+        // Generic containers as fallback
+        'div[class*="a-section"]',
+        'div[id*="widget"]',
+        'section',
+        'article',
       ],
       productLinks: [
         // Direct product links (most reliable)
         'a[href*="/dp/"]',
         '.a-link-normal[href*="/dp/"]',
         'a[href*="/gp/product/"]',
+
+        // Nested product links (more specific searches within containers)
+        'h3 a[href*="/dp/"]',
+        'h2 a[href*="/dp/"]',
+        '[class*="title"] a[href*="/dp/"]',
+        '[class*="name"] a[href*="/dp/"]',
+        '[data-testid*="title"] a[href*="/dp/"]',
 
         // Contextual product links
         '[class*="item"] a[href*="/dp/"]',
@@ -127,6 +164,15 @@ const CSS_SELECTORS = {
         '.celwidget a[href*="/dp/"]',
         '[data-testid*="product"] a[href*="/dp/"]',
         '[class*="ProductCard"] a[href*="/dp/"]',
+
+        // Dynamic content links
+        '[data-cy] a[href*="/dp/"]',
+        '.aplus-module a[href*="/dp/"]',
+        '[data-widget] a[href*="/dp/"]',
+        '[data-automation-id] a[href*="/dp/"]',
+
+        // Image links that point to products
+        'a[href*="/dp/"]:has(img)',
       ],
       listTitle: [
         '.octopus-pc-card-content h3',
@@ -179,6 +225,15 @@ const SCRAPING_CONFIG = {
     'Cache-Control': 'no-cache',
     Pragma: 'no-cache',
   },
+};
+
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+  maxRateLimitRetries: 3, // Additional retries specifically for 429 errors
+  baseRateLimitDelay: 15000, // Base delay for 429 errors (15 seconds)
+  exponentialBackoffMultiplier: 2, // Multiplier for exponential backoff
+  maxRateLimitDelay: 120000, // Maximum delay for 429 errors (2 minutes)
+  respectRetryAfterHeader: true, // Whether to respect Retry-After header from server
 };
 
 // List page processing configuration
@@ -265,6 +320,28 @@ const log = (message, level = 'INFO') => {
   console.log(`[${timestamp}] [${level}] ${message}`);
 };
 
+// Calculate delay for rate limiting with exponential backoff
+const calculateRateLimitDelay = (attempt, retryAfterMs = null) => {
+  if (RATE_LIMIT_CONFIG.respectRetryAfterHeader && retryAfterMs) {
+    // Use server-suggested delay, but cap it at our maximum
+    return Math.min(retryAfterMs, RATE_LIMIT_CONFIG.maxRateLimitDelay);
+  }
+
+  // Calculate exponential backoff delay
+  const exponentialDelay =
+    RATE_LIMIT_CONFIG.baseRateLimitDelay *
+    Math.pow(RATE_LIMIT_CONFIG.exponentialBackoffMultiplier, attempt - 1);
+
+  // Cap the delay at maximum and add some jitter to avoid thundering herd
+  const cappedDelay = Math.min(
+    exponentialDelay,
+    RATE_LIMIT_CONFIG.maxRateLimitDelay
+  );
+  const jitter = Math.random() * 0.1 * cappedDelay; // Up to 10% jitter
+
+  return Math.floor(cappedDelay + jitter);
+};
+
 // Detect URL type based on patterns
 const detectUrlType = (url) => {
   if (!url || typeof url !== 'string') {
@@ -305,11 +382,54 @@ const detectUrlType = (url) => {
 };
 
 // Check if a URL should be excluded from store product extraction
-const shouldExcludeStoreUrl = (url, title = '') => {
+const shouldExcludeStoreUrl = (url, title = '', isDirectSearch = false) => {
   if (!url || typeof url !== 'string') {
     return true;
   }
 
+  // Be more lenient with footer patterns in direct search - they might be valid products
+  if (isDirectSearch) {
+    // Only exclude clearly promotional ASINs in direct search
+    for (const pattern of STORE_URL_EXCLUSIONS.PROMO_PRODUCTS) {
+      if (pattern.test(url)) {
+        log(`Excluding promotional product in direct search: ${url}`, 'DEBUG');
+        return true;
+      }
+    }
+
+    // Only exclude obvious service patterns in direct search
+    const strictServicePatterns = [
+      /amazon.*business.*card/i,
+      /amazon.*prime.*membership/i,
+      /amazon.*gift.*card/i,
+      /amazon.*credit.*card/i,
+    ];
+
+    for (const pattern of strictServicePatterns) {
+      if (pattern.test(url) || (title && pattern.test(title))) {
+        log(
+          `Excluding service product in direct search: ${url} (${title})`,
+          'DEBUG'
+        );
+        return true;
+      }
+    }
+
+    // In direct search, don't exclude based on footer patterns - log but allow
+    for (const pattern of STORE_URL_EXCLUSIONS.FOOTER_LINKS) {
+      if (pattern.test(url)) {
+        log(
+          `Found footer/promo pattern but allowing in direct search: ${url}`,
+          'DEBUG'
+        );
+        return false; // Allow it
+      }
+    }
+
+    return false;
+  }
+
+  // Original strict filtering for container-based extraction
   // Check footer and promotional link patterns
   for (const pattern of STORE_URL_EXCLUSIONS.FOOTER_LINKS) {
     if (pattern.test(url)) {
@@ -581,6 +701,202 @@ const extractReviewCount = ($) => {
   return DEFAULT_VALUES.notAvailable;
 };
 
+// Extract ASIN from product URL
+const extractAsinFromUrl = (url) => {
+  if (!url) return DEFAULT_VALUES.notAvailable;
+
+  const asinMatch = url.match(REGEX_PATTERNS.asinFromUrl);
+  return asinMatch ? asinMatch[1] : DEFAULT_VALUES.notAvailable;
+};
+
+// Extract product URLs from dynamic content (JavaScript, JSON, data attributes)
+const extractDynamicStoreProducts = ($) => {
+  const productUrls = new Set();
+  log('Starting dynamic content extraction...', 'DEBUG');
+
+  // Try to extract from script tags containing JSON data
+  $('script').each((index, element) => {
+    const scriptContent = $(element).html();
+    if (scriptContent) {
+      // Enhanced ASIN detection - look for various patterns
+      const patterns = [
+        // Standard ASIN patterns
+        /["\']([B][A-Z0-9]{9})["\']/g,
+        /"asin":\s*"([B][A-Z0-9]{9})"/g,
+        /"ASIN":\s*"([B][A-Z0-9]{9})"/g,
+        /dp\/([B][A-Z0-9]{9})/g,
+        /product\/([B][A-Z0-9]{9})/g,
+        // Contextual ASIN patterns in store data
+        /"product-id":\s*"([B][A-Z0-9]{9})"/g,
+        /"productId":\s*"([B][A-Z0-9]{9})"/g,
+        /"item-id":\s*"([B][A-Z0-9]{9})"/g,
+        /"itemId":\s*"([B][A-Z0-9]{9})"/g,
+      ];
+
+      patterns.forEach((pattern, patternIndex) => {
+        const matches = [...scriptContent.matchAll(pattern)];
+        if (matches.length > 0) {
+          log(
+            `Found ${matches.length} ASINs with pattern ${patternIndex + 1}`,
+            'DEBUG'
+          );
+          matches.forEach((match) => {
+            const asin = match[1];
+            if (/^B[A-Z0-9]{9}$/.test(asin)) {
+              productUrls.add(`https://www.amazon.com/dp/${asin}`);
+            }
+          });
+        }
+      });
+
+      // Look for full product URLs in JSON
+      const urlMatches = scriptContent.match(
+        /https?:\/\/[^"'\s]*amazon\.com[^"'\s]*\/dp\/[A-Z0-9]{10}[^"'\s]*/g
+      );
+      if (urlMatches && urlMatches.length > 0) {
+        log(`Found ${urlMatches.length} full product URLs in script`, 'DEBUG');
+        urlMatches.forEach((url) => {
+          // Clean up the URL
+          const cleanUrl = url.replace(/['"\\].*$/, '').replace(/[<>].*$/, '');
+          if (cleanUrl.includes('/dp/')) {
+            productUrls.add(cleanUrl);
+          }
+        });
+      }
+    }
+  });
+
+  // Try to extract from data attributes
+  $('[data-asin], [data-product-id], [data-item-id]').each((index, element) => {
+    const asin =
+      $(element).attr('data-asin') ||
+      $(element).attr('data-product-id') ||
+      $(element).attr('data-item-id');
+    if (asin && /^B[A-Z0-9]{9}$/.test(asin)) {
+      productUrls.add(`https://www.amazon.com/dp/${asin}`);
+    }
+  });
+
+  // Look for ASINs in data-* attributes containing JSON
+  $('[data-json], [data-config], [data-props], [data-state]').each(
+    (index, element) => {
+      ['data-json', 'data-config', 'data-props', 'data-state'].forEach(
+        (attr) => {
+          const dataContent = $(element).attr(attr);
+          if (dataContent) {
+            try {
+              // Try to parse as JSON
+              const parsed = JSON.parse(dataContent);
+              const jsonStr = JSON.stringify(parsed);
+              const asinMatches = jsonStr.match(/[A-Z0-9]{10}/g);
+              if (asinMatches) {
+                asinMatches.forEach((asin) => {
+                  if (/^B[A-Z0-9]{9}$/.test(asin)) {
+                    productUrls.add(`https://www.amazon.com/dp/${asin}`);
+                  }
+                });
+              }
+            } catch (e) {
+              // If not valid JSON, search for ASINs in the string
+              const asinMatches = dataContent.match(/[A-Z0-9]{10}/g);
+              if (asinMatches) {
+                asinMatches.forEach((asin) => {
+                  if (/^B[A-Z0-9]{9}$/.test(asin)) {
+                    productUrls.add(`https://www.amazon.com/dp/${asin}`);
+                  }
+                });
+              }
+            }
+          }
+        }
+      );
+    }
+  );
+
+  // Look for product URLs in any remaining places
+  const bodyText = $('body').html();
+  if (bodyText) {
+    // Find any embedded product URLs
+    const urlMatches = bodyText.match(
+      /https?:\/\/[^"'\s>]*amazon\.com[^"'\s>]*\/dp\/[A-Z0-9]{10}/g
+    );
+    if (urlMatches) {
+      urlMatches.forEach((url) => {
+        // Clean up and normalize the URL
+        const cleanUrl = url.replace(/['"\\].*$/, '').replace(/[<>].*$/, '');
+        if (cleanUrl.includes('/dp/')) {
+          productUrls.add(cleanUrl);
+        }
+      });
+    }
+  }
+
+  // Additional extraction attempts for store-specific patterns
+  log('Attempting store-specific extraction patterns...', 'DEBUG');
+
+  // Look for any element that might contain product information
+  const potentialProductElements = [
+    '[data-cy*="product"]',
+    '[data-testid*="product"]',
+    '[class*="ProductCard"]',
+    '[class*="product-card"]',
+    '.aplus-module',
+    '[data-widget]',
+    '[data-automation-id]',
+  ];
+
+  potentialProductElements.forEach((selector) => {
+    const elements = $(selector);
+    if (elements.length > 0) {
+      log(
+        `Found ${elements.length} potential product elements with: ${selector}`,
+        'DEBUG'
+      );
+
+      elements.each((index, element) => {
+        // Look for ASINs in attributes
+        const $el = $(element);
+        const attributes = element.attribs || {};
+
+        Object.values(attributes).forEach((value) => {
+          if (typeof value === 'string') {
+            const asinMatch = value.match(/B[A-Z0-9]{9}/);
+            if (asinMatch) {
+              productUrls.add(`https://www.amazon.com/dp/${asinMatch[0]}`);
+              log(`Found ASIN in attribute: ${asinMatch[0]}`, 'DEBUG');
+            }
+          }
+        });
+
+        // Look for ASINs in text content
+        const textContent = $el.text();
+        if (textContent) {
+          const asinMatch = textContent.match(/B[A-Z0-9]{9}/);
+          if (asinMatch) {
+            productUrls.add(`https://www.amazon.com/dp/${asinMatch[0]}`);
+            log(`Found ASIN in text content: ${asinMatch[0]}`, 'DEBUG');
+          }
+        }
+      });
+    }
+  });
+
+  const urlArray = Array.from(productUrls);
+  log(`Extracted ${urlArray.length} product URLs from dynamic content`, 'INFO');
+
+  if (urlArray.length > 0) {
+    log('Dynamic extraction found products:', 'DEBUG');
+    urlArray.slice(0, 5).forEach((url, index) => {
+      log(`  ${index + 1}. ${url}`, 'DEBUG');
+    });
+    if (urlArray.length > 5) {
+      log(`  ... and ${urlArray.length - 5} more`, 'DEBUG');
+    }
+  }
+
+  return urlArray;
+};
+
 // Extract product links from list pages
 const extractProductLinksFromList = ($, urlType) => {
   const productLinks = [];
@@ -593,10 +909,13 @@ const extractProductLinksFromList = ($, urlType) => {
 
   // Find product containers first
   let containers = $();
+  let usedContainerSelector = null;
+
   for (const containerSelector of selectors.productContainers) {
     const found = $(containerSelector);
     if (found.length > 0) {
       containers = found;
+      usedContainerSelector = containerSelector;
       log(
         `Found ${found.length} product containers with selector: ${containerSelector}`
       );
@@ -632,22 +951,61 @@ const extractProductLinksFromList = ($, urlType) => {
   }
 
   // Extract links from containers (limit to configured maximum)
+  log(
+    `Attempting to extract links from ${Math.min(
+      containers.length,
+      LIST_PROCESSING_CONFIG.maxProductsPerList
+    )} containers using selector: ${usedContainerSelector}`,
+    'DEBUG'
+  );
+
   containers
     .slice(0, LIST_PROCESSING_CONFIG.maxProductsPerList)
     .each((index, element) => {
       const container = $(element);
+      log(
+        `Processing container ${index + 1}/${Math.min(
+          containers.length,
+          LIST_PROCESSING_CONFIG.maxProductsPerList
+        )}`,
+        'DEBUG'
+      );
 
       // Try to find product link within container
       let productUrl = null;
       for (const linkSelector of selectors.productLinks) {
-        const linkElement = container.find(linkSelector).first();
+        let linkElement;
+
+        // Special handling for image-based selectors
+        if (linkSelector.includes(':has(img)')) {
+          // Find <a> tags that contain images
+          linkElement = container
+            .find('a[href*="/dp/"]')
+            .filter(function () {
+              return $(this).find('img').length > 0;
+            })
+            .first();
+        } else {
+          linkElement = container.find(linkSelector).first();
+        }
+
         if (linkElement.length > 0) {
-          const href = linkElement.attr('href');
+          let href = linkElement.attr('href');
+
+          // If this is an image element, get the parent link
+          if (linkElement.is('img')) {
+            const parentLink = linkElement.closest('a[href*="/dp/"]');
+            if (parentLink.length > 0) {
+              href = parentLink.attr('href');
+            }
+          }
+
           if (href) {
             // Convert relative URLs to absolute
             productUrl = href.startsWith('http')
               ? href
               : `https://www.amazon.com${href}`;
+            log(`Found product link using selector: ${linkSelector}`, 'DEBUG');
             break;
           }
         }
@@ -664,6 +1022,42 @@ const extractProductLinksFromList = ($, urlType) => {
           url: productUrl,
           containerIndex: index,
         });
+        log(
+          `Successfully extracted product from container ${
+            index + 1
+          }: ${productUrl}`,
+          'DEBUG'
+        );
+      } else {
+        log(`No product URL found in container ${index + 1}`, 'DEBUG');
+
+        // Debug: log what's actually in this container
+        const containerHtml = container.html();
+        if (containerHtml && containerHtml.length > 0) {
+          log(
+            `Container ${index + 1} content preview: ${containerHtml.substring(
+              0,
+              200
+            )}...`,
+            'DEBUG'
+          );
+
+          // Check for any links at all in this container
+          const anyLinks = container.find('a');
+          log(
+            `Container ${index + 1} contains ${anyLinks.length} total links`,
+            'DEBUG'
+          );
+
+          // Check for any /dp/ patterns in the container
+          const dpPattern = /\/dp\/[A-Z0-9]{10}/;
+          if (dpPattern.test(containerHtml)) {
+            log(
+              `Container ${index + 1} contains /dp/ pattern in HTML`,
+              'DEBUG'
+            );
+          }
+        }
       }
     });
 
@@ -671,31 +1065,125 @@ const extractProductLinksFromList = ($, urlType) => {
   if (productLinks.length === 0) {
     log('No links found in containers, trying direct page search', 'WARN');
 
-    $('a[href*="/dp/"]').each((index, element) => {
-      if (index >= LIST_PROCESSING_CONFIG.maxProductsPerList) return false;
+    // Enhanced direct search with multiple selectors
+    const directSearchSelectors = [
+      'a[href*="/dp/"]',
+      'a[href*="/gp/product/"]',
+      '[href*="/dp/"]', // Can include other element types
+    ];
 
-      const href = $(element).attr('href');
-      if (href) {
-        const productUrl = href.startsWith('http')
-          ? href
-          : `https://www.amazon.com${href}`;
+    for (const selector of directSearchSelectors) {
+      if (productLinks.length >= LIST_PROCESSING_CONFIG.maxProductsPerList)
+        break;
 
-        // For store pages, filter out footer links and promotional products
-        if (urlType === 'store' && shouldExcludeStoreUrl(productUrl)) {
-          log(
-            `Filtered out excluded URL in direct search: ${productUrl}`,
-            'DEBUG'
+      $(selector).each((index, element) => {
+        if (productLinks.length >= LIST_PROCESSING_CONFIG.maxProductsPerList)
+          return false;
+
+        let href = $(element).attr('href');
+        if (href) {
+          const productUrl = href.startsWith('http')
+            ? href
+            : `https://www.amazon.com${href}`;
+
+          // For store pages, filter out footer links and promotional products
+          if (
+            urlType === 'store' &&
+            shouldExcludeStoreUrl(productUrl, '', true)
+          ) {
+            log(
+              `Filtered out excluded URL in direct search: ${productUrl}`,
+              'DEBUG'
+            );
+            return; // Skip this link
+          }
+
+          // Check if we already have this URL to avoid duplicates
+          const alreadyExists = productLinks.some(
+            (link) => link.url === productUrl
           );
-          return; // Skip this link
+          if (!alreadyExists) {
+            productLinks.push({
+              url: productUrl,
+              containerIndex: productLinks.length,
+              source: `direct-search-${selector}`,
+            });
+            log(`Found product via direct search: ${productUrl}`, 'DEBUG');
+          }
         }
+      });
+    }
+  }
 
+  // For store pages, if still no products found, try extracting from JavaScript/data
+  if (productLinks.length === 0 && urlType === 'store') {
+    log(
+      'No products found via selectors, trying JavaScript/data extraction',
+      'WARN'
+    );
+
+    const dynamicProductUrls = extractDynamicStoreProducts($);
+
+    dynamicProductUrls.forEach((url, index) => {
+      if (index >= LIST_PROCESSING_CONFIG.maxProductsPerList) return;
+
+      if (!shouldExcludeStoreUrl(url, '', false)) {
         productLinks.push({
-          url: productUrl,
+          url: url,
           containerIndex: index,
-          source: 'direct-search',
+          source: 'dynamic-extraction',
         });
       }
     });
+
+    // If still no products found after all extraction attempts,
+    // and we're on a store page with only promotional/service products,
+    // include them but mark them as such
+    if (productLinks.length === 0) {
+      log(
+        'No standard products found, checking for promotional products to include',
+        'INFO'
+      );
+
+      // Re-scan for promotional products that were excluded
+      const promotionalLinks = [];
+      $('a[href*="/dp/"]').each((index, element) => {
+        if (index >= LIST_PROCESSING_CONFIG.maxProductsPerList) return false;
+
+        const href = $(element).attr('href');
+        if (href) {
+          const productUrl = href.startsWith('http')
+            ? href
+            : `https://www.amazon.com${href}`;
+
+          // Check if this was excluded as promotional but might be valid for this store
+          const isPromotional = STORE_URL_EXCLUSIONS.PROMO_PRODUCTS.some(
+            (pattern) => pattern.test(productUrl)
+          );
+
+          if (isPromotional) {
+            log(
+              `Including promotional product as fallback: ${productUrl}`,
+              'INFO'
+            );
+            promotionalLinks.push({
+              url: productUrl,
+              containerIndex: index,
+              source: 'promotional-fallback',
+              isPromotional: true,
+            });
+          }
+        }
+      });
+
+      if (promotionalLinks.length > 0) {
+        log(
+          `Found ${promotionalLinks.length} promotional products as fallback`,
+          'INFO'
+        );
+        productLinks.push(...promotionalLinks);
+      }
+    }
   }
 
   log(`Extracted ${productLinks.length} product links from list page`);
@@ -784,18 +1272,108 @@ const processListPage = async (html, url) => {
 
     // For store pages, check if this is a legitimate store with dynamic content
     if (urlType === 'store') {
-      // Check for store indicators in the HTML
+      // Enhanced store indicators detection
+      const storeIndicators = [
+        'brandName',
+        'externalWidgetIds',
+        'stores-react',
+        '/stores/',
+        'storefront',
+        'aplus-module',
+        'widgetId',
+        'data-widget',
+        'data-cy',
+        'data-automation-id',
+        '"widgets"',
+        '"modules"',
+        'React',
+      ];
+
       const hasStoreIndicators =
-        html.includes('brandName') ||
-        html.includes('externalWidgetIds') ||
-        html.includes('stores-react') ||
-        html.includes('/stores/') ||
+        storeIndicators.some((indicator) => html.includes(indicator)) ||
         url.includes('/stores/');
 
       if (hasStoreIndicators) {
         log('Detected legitimate store page with dynamic content', 'INFO');
+
+        // Try dynamic extraction first
+        const $ = cheerio.load(html);
+        const dynamicUrls = extractDynamicStoreProducts($);
+
+        if (dynamicUrls.length > 0) {
+          log(
+            `Found ${dynamicUrls.length} products via dynamic extraction`,
+            'INFO'
+          );
+          // Convert to the expected format and return
+          const products = [];
+          const maxProducts = Math.min(
+            dynamicUrls.length,
+            LIST_PROCESSING_CONFIG.maxProductsPerList
+          );
+
+          for (let i = 0; i < maxProducts; i++) {
+            const productUrl = dynamicUrls[i];
+            try {
+              // Try to get basic product info from the URL
+              const basicProductInfo = {
+                title: 'Product from store (dynamic)',
+                price: DEFAULT_VALUES.notAvailable,
+                asin: extractAsinFromUrl(productUrl),
+                rating: DEFAULT_VALUES.notAvailable,
+                reviewCount: DEFAULT_VALUES.notAvailable,
+                url: productUrl,
+                source: 'dynamic-store-extraction',
+              };
+              products.push(basicProductInfo);
+            } catch (productError) {
+              log(
+                `Failed to process dynamic product ${productUrl}: ${productError.message}`,
+                'WARN'
+              );
+            }
+          }
+
+          return products;
+        }
+
+        // Instead of returning a placeholder, throw a more informative error
+        // Let's log some debug information first
+        const containerSelectors =
+          CSS_SELECTORS.listPages.store.productContainers;
+        const linkSelectors = CSS_SELECTORS.listPages.store.productLinks;
+
+        log('Store page debugging information:', 'DEBUG');
+        log(
+          `Found ${containerSelectors.length} container selectors to try`,
+          'DEBUG'
+        );
+        log(`Found ${linkSelectors.length} link selectors to try`, 'DEBUG');
+
+        // Check what elements are actually present on the page
+        const debugSelectors = [
+          'a[href*="/dp/"]',
+          '[data-asin]',
+          '[class*="product"]',
+          '[data-csa-c-type="widget"]',
+          'img[src*="images-amazon"]',
+        ];
+
+        debugSelectors.forEach((selector) => {
+          const found = $(selector);
+          log(
+            `Debug: Found ${found.length} elements with selector: ${selector}`,
+            'DEBUG'
+          );
+        });
+
         throw new Error(
-          'This appears to be a valid store page, but the products are loaded dynamically via JavaScript. The store may use external widgets or have products that are not visible in the static HTML. Try accessing individual product category pages within this store instead.'
+          `No products found on store page despite detecting store indicators. This may be due to:\n` +
+            `1. Products loaded entirely via JavaScript after page load\n` +
+            `2. Store page using a layout not covered by current selectors\n` +
+            `3. Store page requiring authentication or having regional restrictions\n` +
+            `4. Store page containing only promotional content without actual products\n` +
+            `URL: ${url}`
         );
       } else {
         throw new Error(
@@ -943,6 +1521,7 @@ const extractProductData = (html, url) => {
 // Main scraping function with retry logic - handles both individual products and list pages
 const scrapeAmazonProduct = async (url, processAsList = true) => {
   let lastError;
+  let rateLimitAttempts = 0;
 
   // Detect URL type first
   const urlType = detectUrlType(url);
@@ -974,6 +1553,8 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       log(`Using clean URL: ${cleanUrl}`);
 
       // Add random delay to mimic human behavior
+      // Use longer delays for store pages to reduce rate limiting
+      const isStorePage = urlType === URL_TYPES.STORE;
       const baseDelay =
         attempt === 1
           ? Math.floor(
@@ -981,8 +1562,13 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
                 (TIMING_CONFIG.maxInitialDelay - TIMING_CONFIG.minInitialDelay)
             ) + TIMING_CONFIG.minInitialDelay
           : SCRAPING_CONFIG.retryDelay;
+
+      // Add extra delay for store pages on first attempt
+      const storePageBonus = isStorePage && attempt === 1 ? 3000 : 0;
       const randomDelay =
-        baseDelay + Math.floor(Math.random() * TIMING_CONFIG.maxRandomDelay);
+        baseDelay +
+        storePageBonus +
+        Math.floor(Math.random() * TIMING_CONFIG.maxRandomDelay);
 
       // Always add some delay for first attempt, higher probability for retries
       const shouldDelay =
@@ -1102,12 +1688,49 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       lastError = error;
       log(`Scraping attempt ${attempt} failed: ${error.message}`, 'ERROR');
 
-      // Don't retry for certain types of errors
+      // Handle HTTP 429 rate limiting errors with special retry logic
+      if (error.message.includes('HTTP_429_RATE_LIMIT')) {
+        rateLimitAttempts++;
+
+        if (rateLimitAttempts <= RATE_LIMIT_CONFIG.maxRateLimitRetries) {
+          // Extract retry-after value if present
+          const retryAfterMatch = error.message.match(/RETRY_AFTER_(\d+)/);
+          const retryAfterMs = retryAfterMatch
+            ? parseInt(retryAfterMatch[1])
+            : null;
+
+          const rateLimitDelay = calculateRateLimitDelay(
+            rateLimitAttempts,
+            retryAfterMs
+          );
+
+          log(
+            `Rate limit hit (attempt ${rateLimitAttempts}/${
+              RATE_LIMIT_CONFIG.maxRateLimitRetries
+            }). Waiting ${Math.round(rateLimitDelay / 1000)}s before retry...`,
+            'WARN'
+          );
+          await new Promise((resolve) => setTimeout(resolve, rateLimitDelay));
+
+          // Reset attempt counter to give rate limit retries a fresh chance
+          attempt = Math.max(0, attempt - 1);
+          continue;
+        } else {
+          log(
+            `Exceeded maximum rate limit retries (${RATE_LIMIT_CONFIG.maxRateLimitRetries})`,
+            'ERROR'
+          );
+          break;
+        }
+      }
+
+      // Don't retry for certain types of errors (excluding 429 which is handled above)
       if (
         error.message.includes('Invalid Amazon URL') ||
         error.message.includes('bot detection') ||
         error.message.includes('rate limit exceeded') ||
-        error.message.includes('HTTP 4')
+        (error.message.includes('HTTP 4') &&
+          !error.message.includes('HTTP_429_RATE_LIMIT'))
       ) {
         break;
       }
@@ -1147,6 +1770,10 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
   } else if (lastError.message.includes('rate limit exceeded')) {
     throw new Error(
       'Amazon rate limit exceeded. Please wait a few minutes before making additional requests.'
+    );
+  } else if (lastError.message.includes('HTTP_429_RATE_LIMIT')) {
+    throw new Error(
+      'Amazon is currently rate limiting requests. The system attempted multiple retries with exponential backoff but was unable to complete the request. Please wait several minutes before trying again.'
     );
   } else if (
     lastError.message.includes('HTTP 4') ||

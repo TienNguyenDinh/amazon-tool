@@ -80,7 +80,22 @@ const getPageHtml = async (url, isStoreDerivative = false) => {
         }
 
         if (res.statusCode !== 200) {
-          reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          // Special handling for rate limiting errors
+          if (res.statusCode === 429) {
+            const retryAfter = res.headers['retry-after'];
+            const retryAfterMs = retryAfter
+              ? parseInt(retryAfter) * 1000
+              : null;
+            reject(
+              new Error(
+                `HTTP_429_RATE_LIMIT${
+                  retryAfterMs ? `_RETRY_AFTER_${retryAfterMs}` : ''
+                }: ${res.statusMessage}`
+              )
+            );
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+          }
           return;
         }
 
