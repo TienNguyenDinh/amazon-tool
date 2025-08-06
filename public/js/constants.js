@@ -47,16 +47,16 @@ const PROGRESS_CONFIG = {
 const API_CONFIG = {
   baseUrl: window.location.origin,
   scrapeEndpoint: '/api/scrape',
-  timeout: 45000,
+  timeout: 10000,
 };
 
 // Timing constants for progress animation
 const PROGRESS_TIMING = {
-  UPDATE_INTERVAL: 100,
-  SLOW_PHASE_DURATION: 3000,
-  FAST_PHASE_DURATION: 1500,
-  COMPLETION_DISPLAY_TIME: 800,
-  RESULTS_DELAY: 300,
+  UPDATE_INTERVAL: 50,
+  SLOW_PHASE_DURATION: 300,
+  FAST_PHASE_DURATION: 150,
+  COMPLETION_DISPLAY_TIME: 100,
+  RESULTS_DELAY: 50,
 };
 
 // Column display configuration

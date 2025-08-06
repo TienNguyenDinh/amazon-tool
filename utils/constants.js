@@ -47,9 +47,9 @@ const HTTP_STATUS = {
 const APP_CONFIG = {
   VERSION: '2.1.0-store-working',
   SERVICE_NAME: 'Amazon Product Scraper',
-  DEFAULT_TIMEOUT: 45000,
+  DEFAULT_TIMEOUT: 10000,
   MAX_RETRY_ATTEMPTS: 2,
-  RETRY_DELAY: 8000,
+  RETRY_DELAY: 100,
 };
 
 // Default Values for Missing Data
@@ -80,9 +80,9 @@ const USER_AGENTS = [
 // Rate Limiting Configuration
 const RATE_LIMIT_CONFIG = {
   MAX_RETRIES: 3,
-  BASE_DELAY: 15000,
+  BASE_DELAY: 100,
   EXPONENTIAL_MULTIPLIER: 2,
-  MAX_DELAY: 120000,
+  MAX_DELAY: 1000,
   RESPECT_RETRY_AFTER: true,
 };
 

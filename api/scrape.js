@@ -240,7 +240,7 @@ const REGEX_PATTERNS = {
 // Configuration constants
 const SCRAPING_CONFIG = {
   timeout: APP_CONFIG.DEFAULT_TIMEOUT,
-  waitTime: 1000,
+  waitTime: 10,
   maxRetryAttempts: APP_CONFIG.MAX_RETRY_ATTEMPTS,
   retryDelay: APP_CONFIG.RETRY_DELAY,
   headers: {
@@ -267,18 +267,18 @@ const RATE_LIMIT_CONFIG_LOCAL = {
 // List page processing configuration
 const LIST_PROCESSING_CONFIG = {
   maxProductsPerList: 10,
-  delayBetweenProducts: 1500,
+  delayBetweenProducts: 50,
   maxListProcessingTime: 300000, // 5 minutes
   enableFallbackToListData: true,
 };
 
 // Timing constants for human-like behavior
 const TIMING_CONFIG = {
-  minInitialDelay: 2000, // Minimum delay for first attempt
-  maxInitialDelay: 5000, // Maximum delay for first attempt
-  maxRandomDelay: 3000, // Maximum additional random delay
-  delayProbability: 0.8, // Probability of adding delay on first attempt
-  humanClickDelay: 500, // Simulate human click/interaction delay
+  minInitialDelay: 10,
+  maxInitialDelay: 50,
+  maxRandomDelay: 20,
+  delayProbability: 0.1,
+  humanClickDelay: 10,
 };
 
 // URL Type constants - using shared constants
@@ -1459,7 +1459,7 @@ const processListPage = async (html, url) => {
       if (i < maxProducts - 1) {
         const delayTime =
           LIST_PROCESSING_CONFIG.delayBetweenProducts +
-          Math.floor(Math.random() * 2000); // Add 0-2s random delay
+          Math.floor(Math.random() * 20); // Add 0-20ms random delay
         await new Promise((resolve) => setTimeout(resolve, delayTime));
       }
     } catch (error) {
@@ -1541,7 +1541,7 @@ const processListPage = async (html, url) => {
         directProducts.push(productData);
 
         // Add delay between direct product requests
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, 20));
       } catch (error) {
         log(
           `Failed to scrape known product ${productUrl}: ${error.message}`,
@@ -1655,7 +1655,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
           : SCRAPING_CONFIG.retryDelay;
 
       // Add extra delay for store pages on first attempt
-      const storePageBonus = isStorePage && attempt === 1 ? 3000 : 0;
+      const storePageBonus = isStorePage && attempt === 1 ? 30 : 0;
       const randomDelay =
         baseDelay +
         storePageBonus +

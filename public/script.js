@@ -412,7 +412,7 @@ const processUnifiedUrls = async (urlData) => {
         STATUS_MESSAGES.urlTypesDetected.replace('{summary}', urlData.summary),
         'info'
       );
-      await new Promise((resolve) => setTimeout(resolve, 2000)); // Show for 2 seconds
+      await new Promise((resolve) => setTimeout(resolve, 200)); // Show for 200ms
     }
 
     // Hide previous results
@@ -528,7 +528,7 @@ const processUnifiedUrls = async (urlData) => {
       // Add delay between requests based on URL type (search/category may need longer delays)
       if (i < urlData.urls.length - 1) {
         const delay =
-          type === URL_TYPE.SEARCH || type === URL_TYPE.CATEGORY ? 2500 : 1500;
+          type === URL_TYPE.SEARCH || type === URL_TYPE.CATEGORY ? 25 : 15;
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
