@@ -2,7 +2,14 @@ const { URL } = require('url');
 const cheerio = require('cheerio');
 const { getPageHtml } = require('../utils/browser');
 const { handleCors } = require('../utils/cors');
-const { log } = require('../utils/logger');
+const {
+  log,
+  logInfo,
+  logWarn,
+  logError,
+  logOperationStart,
+  logOperationEnd,
+} = require('../utils/logger');
 const {
   APP_CONFIG,
   DEFAULT_VALUES,
@@ -1421,7 +1428,7 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       urlType === URL_TYPES.CATEGORY ||
       urlType === URL_TYPES.STORE);
 
-  log(`Detected URL type: ${urlType}, processing as list: ${isListPage}`);
+  logInfo('URL analysis complete', 'SCRAPER', { urlType, isListPage });
 
   for (
     let attempt = 1;
@@ -1475,13 +1482,18 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       );
 
       // Make HTTP request to get the page with realistic headers
-      log('Making HTTP request to Amazon...');
-      log('=== CALLING makeHttpRequest ===');
+      const httpStartTime = logOperationStart('HTTP_REQUEST', 'SCRAPER', {
+        url: cleanUrl,
+      });
 
       // Detect if this is a store-derived product URL to use appropriate headers
       const isStoreDerivative = urlType === URL_TYPES.PRODUCT && !processAsList;
       const html = await makeHttpRequest(cleanUrl, isStoreDerivative);
-      log('=== makeHttpRequest COMPLETED ===');
+
+      logOperationEnd('HTTP_REQUEST', httpStartTime, 'SCRAPER', {
+        htmlSize: html?.length || 0,
+        isStoreDerivative,
+      });
 
       if (!html || html.length < 1000) {
         throw new Error(
@@ -1489,7 +1501,9 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
         );
       }
 
-      log(`Received HTML response (${html.length} characters)`);
+      logInfo('HTML response received', 'SCRAPER', {
+        size: `${html.length} chars`,
+      });
 
       // Check for bot detection patterns
       const botDetectionPatterns = [
@@ -1507,8 +1521,11 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
       );
 
       if (detectedPattern) {
-        log(`Bot detection pattern found: ${detectedPattern}`, 'WARN');
-        log('Continuing with data extraction despite bot detection...', 'INFO');
+        logWarn(
+          'Bot detection pattern found, continuing extraction',
+          'SCRAPER',
+          { pattern: detectedPattern }
+        );
 
         // For store pages and store-derived products, be more lenient with bot detection
         if (urlType === URL_TYPES.STORE) {
@@ -1689,25 +1706,25 @@ module.exports = async (req, res) => {
   }
 
   try {
-    log('=== API HANDLER START ===');
+    const startTime = logOperationStart('API_REQUEST', 'API');
     const { url } = req.body;
 
     if (!url) {
+      logError('Missing URL parameter', 'API');
       return res.status(400).json({
         error: 'URL is required',
         message: 'Please provide a valid Amazon product URL',
       });
     }
 
-    log(`API request received for: ${url}`);
-    log(`Scraper version: ${APP_CONFIG.VERSION}`);
+    logInfo('Processing request', 'API', { url, version: APP_CONFIG.VERSION });
 
-    // Scrape product data
-    log('=== CALLING scrapeAmazonProduct ===');
     const productData = await scrapeAmazonProduct(url);
-    log('=== scrapeAmazonProduct COMPLETED ===');
 
-    log('API request completed successfully');
+    logOperationEnd('API_REQUEST', startTime, 'API', {
+      resultType: Array.isArray(productData) ? 'list' : 'single',
+      itemCount: Array.isArray(productData) ? productData.length : 1,
+    });
 
     // Return JSON response with appropriate format
     // Handle both single product and array of products
@@ -1729,10 +1746,7 @@ module.exports = async (req, res) => {
       });
     }
   } catch (error) {
-    log('=== API HANDLER CAUGHT ERROR ===', 'ERROR');
-    log(`Error message: ${error.message}`, 'ERROR');
-    log(`Error stack: ${error.stack}`, 'ERROR');
-    log('=== END ERROR DEBUG ===', 'ERROR');
+    logError('API request failed', 'API', error);
 
     // Determine appropriate status code based on error
     let statusCode = 500;
