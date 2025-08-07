@@ -110,7 +110,7 @@ const getPageHtml = async (url, isStoreDerivative = false) => {
         });
 
         responseStream.on('end', () => {
-          if (!data || data.length < 1000) {
+          if (!data || data.length < APP_CONFIG.MINIMAL_RESPONSE_SIZE) {
             reject(new Error('Received empty or minimal response from Amazon'));
             return;
           }

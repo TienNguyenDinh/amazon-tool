@@ -1,7 +1,3 @@
-// Shared constants for Amazon Tool
-// This module provides consistent constants across backend and frontend
-
-// URL Type Detection Constants
 const URL_TYPES = {
   PRODUCT: 'product',
   SEARCH: 'search',
@@ -10,7 +6,6 @@ const URL_TYPES = {
   UNKNOWN: 'unknown',
 };
 
-// URL Pattern Matching
 const URL_PATTERNS = {
   PRODUCT: [
     /\/dp\/[A-Z0-9]{10}/,
@@ -30,7 +25,6 @@ const URL_PATTERNS = {
   STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
 };
 
-// HTTP Status Codes
 const HTTP_STATUS = {
   OK: 200,
   BAD_REQUEST: 400,
@@ -43,22 +37,20 @@ const HTTP_STATUS = {
   SERVICE_UNAVAILABLE: 503,
 };
 
-// Application Configuration
 const APP_CONFIG = {
   VERSION: '2.1.0-store-working',
   SERVICE_NAME: 'Amazon Product Scraper',
   DEFAULT_TIMEOUT: 10000,
   MAX_RETRY_ATTEMPTS: 2,
   RETRY_DELAY: 100,
+  MINIMAL_RESPONSE_SIZE: 1000,
 };
 
-// Default Values for Missing Data
 const DEFAULT_VALUES = {
   NOT_AVAILABLE: 'N/A',
   EXTRACTION_FAILED: 'Data extraction failed',
 };
 
-// CORS Configuration
 const CORS_CONFIG = {
   ORIGIN: '*',
   METHODS: {
@@ -68,7 +60,6 @@ const CORS_CONFIG = {
   HEADERS: 'Content-Type',
 };
 
-// Realistic User Agents for HTTP Requests
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
@@ -77,7 +68,6 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
 ];
 
-// Rate Limiting Configuration
 const RATE_LIMIT_CONFIG = {
   MAX_RETRIES: 3,
   BASE_DELAY: 100,

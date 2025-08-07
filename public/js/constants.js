@@ -1,8 +1,7 @@
 // Frontend constants for Amazon Tool
 // Shared constants for frontend JavaScript
 
-// URL Type Detection Constants
-const URL_TYPE = {
+const URL_TYPES = {
   PRODUCT: 'product',
   SEARCH: 'search',
   CATEGORY: 'category',
@@ -10,30 +9,30 @@ const URL_TYPE = {
   UNKNOWN: 'unknown',
 };
 
-// URL Pattern Matching
 const URL_PATTERNS = {
   PRODUCT: [
     /\/dp\/[A-Z0-9]{10}/,
     /\/gp\/product\/[A-Z0-9]{10}/,
     /\/product\/[A-Z0-9]{10}/,
   ],
-  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/],
+  SEARCH: [/\/s\?/, /[?&]k=/, /\/s\/ref=/, /\/s$/],
   CATEGORY: [
     /\/gp\/bestsellers/,
     /\/zgbs\//,
     /\/Best-Sellers-/,
     /\/gp\/top-sellers/,
+    /\/gp\/new-releases/,
+    /\/most-wished-for/,
+    /\/movers-and-shakers/,
   ],
   STORE: [/\/stores\//, /\/shop\//, /\/brand\//, /seller/, /\/b\?node=/],
 };
 
-// URL limits
 const URL_LIMITS = {
   MAX_TOTAL_URLS: 15,
   MIN_URLS: 1,
 };
 
-// Progress bar constants
 const PROGRESS_CONFIG = {
   MIN_VALUE: 0,
   MAX_VALUE: 100,
@@ -43,14 +42,12 @@ const PROGRESS_CONFIG = {
   COMPLETION_THRESHOLD: 95,
 };
 
-// API Configuration
 const API_CONFIG = {
   baseUrl: window.location.origin,
   scrapeEndpoint: '/api/scrape',
   timeout: 10000,
 };
 
-// Timing constants for progress animation
 const PROGRESS_TIMING = {
   UPDATE_INTERVAL: 50,
   SLOW_PHASE_DURATION: 300,
@@ -59,7 +56,6 @@ const PROGRESS_TIMING = {
   RESULTS_DELAY: 50,
 };
 
-// Column display configuration
 const COLUMN_CONFIG = [
   { key: 'title', className: 'title-cell' },
   { key: 'price', className: 'price-cell' },
@@ -69,7 +65,6 @@ const COLUMN_CONFIG = [
   { key: 'url', className: 'url-cell' },
 ];
 
-// Progress phases for detailed tracking
 const PROGRESS_PHASES = {
   INITIALIZING: {
     percentage: 5,
@@ -110,7 +105,6 @@ const PROGRESS_PHASES = {
   COMPLETE: { percentage: 100, message: '✅ Complete! Displaying results...' },
 };
 
-// Status messages
 const STATUS_MESSAGES = {
   scraping: 'Processing Amazon URLs...',
   scrapingProduct: 'Scraping Amazon product data...',
@@ -140,7 +134,6 @@ const STATUS_MESSAGES = {
     'Extracted {success} of {total} products. Some products could not be processed.',
   urlTypesDetected: 'Detected URL types: {summary}',
 
-  // Detailed phase messages
   listProcessing: 'Found {count} products on page, extracting details...',
   productDetails: 'Extracting product {current} of {total}: {title}...',
   retryAttempt: 'First attempt failed, trying again with different approach...',
@@ -151,11 +144,29 @@ const STATUS_MESSAGES = {
   selectorSearch: 'Looking for product information on the page...',
 };
 
-// Magic button text
 const MAGIC_BUTTON_TEXT = 'Magic Button';
 
-// URL validation patterns
 const URL_VALIDATION = {
   URL_PATTERN: /https?:\/\/[^\s]+/g,
   AMAZON_PATTERN: /amazon\./i,
+};
+
+const REQUEST_DELAYS = {
+  SEARCH_CATEGORY_DELAY: 25,
+  PRODUCT_DELAY: 15,
+  DELAY_CONVERSION_MS: 1000,
+  PROCESSING_DELAY: 500,
+  DISPLAY_DELAY: 200,
+};
+
+const HTTP_STATUS = {
+  OK: 200,
+  BAD_REQUEST: 400,
+  METHOD_NOT_ALLOWED: 405,
+  REQUEST_TIMEOUT: 408,
+  UNPROCESSABLE_ENTITY: 422,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_SERVER_ERROR: 500,
+  BAD_GATEWAY: 502,
+  SERVICE_UNAVAILABLE: 503,
 };

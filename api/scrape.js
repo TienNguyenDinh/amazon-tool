@@ -18,7 +18,6 @@ const {
 } = require('../utils/constants');
 const { detectUrlType, cleanProductUrl } = require('../utils/url-utils');
 
-// CSS Selector constants for easy editing
 const CSS_SELECTORS = {
   title: {
     primary: '#productTitle',
@@ -255,7 +254,6 @@ const SCRAPING_CONFIG = {
   },
 };
 
-// Rate limiting configuration - using shared config
 const RATE_LIMIT_CONFIG_LOCAL = {
   maxRateLimitRetries: RATE_LIMIT_CONFIG.MAX_RETRIES,
   baseRateLimitDelay: RATE_LIMIT_CONFIG.BASE_DELAY,
@@ -264,15 +262,19 @@ const RATE_LIMIT_CONFIG_LOCAL = {
   respectRetryAfterHeader: RATE_LIMIT_CONFIG.RESPECT_RETRY_AFTER,
 };
 
-// List page processing configuration
 const LIST_PROCESSING_CONFIG = {
   maxProductsPerList: 10,
   delayBetweenProducts: 50,
-  maxListProcessingTime: 300000, // 5 minutes
+  maxListProcessingTime: 300000,
   enableFallbackToListData: true,
 };
 
-// Timing constants for human-like behavior
+const DELAY_CONSTANTS = {
+  STORE_PAGE_BONUS_DELAY: 30,
+  PROCESSING_DELAY: 500,
+  DISPLAY_DELAY: 200,
+};
+
 const TIMING_CONFIG = {
   minInitialDelay: 10,
   maxInitialDelay: 50,
@@ -1655,7 +1657,10 @@ const scrapeAmazonProduct = async (url, processAsList = true) => {
           : SCRAPING_CONFIG.retryDelay;
 
       // Add extra delay for store pages on first attempt
-      const storePageBonus = isStorePage && attempt === 1 ? 30 : 0;
+      const storePageBonus =
+        isStorePage && attempt === 1
+          ? DELAY_CONSTANTS.STORE_PAGE_BONUS_DELAY
+          : 0;
       const randomDelay =
         baseDelay +
         storePageBonus +

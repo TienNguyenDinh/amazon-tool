@@ -63,45 +63,6 @@ const updateProgressDisplay = (percentage) => {
   }
 };
 
-// Legacy progress function - kept for compatibility but now uses detailed progress
-const startGradualProgress = () => {
-  try {
-    console.warn(
-      'startGradualProgress is deprecated, use initializeDetailedProgress instead'
-    );
-    // Fallback to detailed progress with single URL
-    initializeDetailedProgress(1);
-  } catch (error) {
-    console.error('Error starting gradual progress:', error);
-  }
-};
-
-const completeProgress = (callback) => {
-  try {
-    // Ensure progress reaches 100%
-    clearProgressInterval();
-    updateProgressDisplay(PROGRESS_CONFIG.MAX_VALUE);
-    progressController.isComplete = true;
-
-    // Show 100% for a moment before executing callback
-    setTimeout(() => {
-      try {
-        if (callback && typeof callback === 'function') {
-          callback();
-        }
-      } catch (error) {
-        console.error('Error executing progress completion callback:', error);
-      }
-    }, PROGRESS_TIMING.RESULTS_DELAY);
-  } catch (error) {
-    console.error('Error completing progress:', error);
-    // Still try to execute callback even if progress completion failed
-    if (callback && typeof callback === 'function') {
-      callback();
-    }
-  }
-};
-
 const hideProgress = () => {
   setTimeout(() => {
     progressBar.classList.add('hidden');
@@ -172,8 +133,8 @@ const simulateDetailedProgress = async (urlType, urlIndex, totalUrls) => {
   // Add network delay phase for first URL or when there are delays
   if (
     urlIndex === 0 ||
-    urlType === URL_TYPE.SEARCH ||
-    urlType === URL_TYPE.CATEGORY
+    urlType === URL_TYPES.SEARCH ||
+    urlType === URL_TYPES.CATEGORY
   ) {
     phases.push('NETWORK_DELAY');
   }
@@ -214,7 +175,7 @@ const setButtonState = (isLoading) => {
 // Detect Amazon URL type based on patterns
 const detectUrlType = (url) => {
   if (!url || url.trim() === '') {
-    return URL_TYPE.UNKNOWN;
+    return URL_TYPES.UNKNOWN;
   }
 
   const cleanUrl = url.trim();
@@ -222,29 +183,29 @@ const detectUrlType = (url) => {
   // Check each URL type pattern
   for (const pattern of URL_PATTERNS.PRODUCT) {
     if (pattern.test(cleanUrl)) {
-      return URL_TYPE.PRODUCT;
+      return URL_TYPES.PRODUCT;
     }
   }
 
   for (const pattern of URL_PATTERNS.SEARCH) {
     if (pattern.test(cleanUrl)) {
-      return URL_TYPE.SEARCH;
+      return URL_TYPES.SEARCH;
     }
   }
 
   for (const pattern of URL_PATTERNS.CATEGORY) {
     if (pattern.test(cleanUrl)) {
-      return URL_TYPE.CATEGORY;
+      return URL_TYPES.CATEGORY;
     }
   }
 
   for (const pattern of URL_PATTERNS.STORE) {
     if (pattern.test(cleanUrl)) {
-      return URL_TYPE.STORE;
+      return URL_TYPES.STORE;
     }
   }
 
-  return URL_TYPE.UNKNOWN;
+  return URL_TYPES.UNKNOWN;
 };
 
 const validateAmazonUrl = (url) => {
@@ -291,11 +252,11 @@ const validateUnifiedUrls = (urlsText) => {
   const invalidUrls = [];
   const validUrls = [];
   const urlTypeCount = {
-    [URL_TYPE.PRODUCT]: 0,
-    [URL_TYPE.SEARCH]: 0,
-    [URL_TYPE.CATEGORY]: 0,
-    [URL_TYPE.STORE]: 0,
-    [URL_TYPE.UNKNOWN]: 0,
+    [URL_TYPES.PRODUCT]: 0,
+    [URL_TYPES.SEARCH]: 0,
+    [URL_TYPES.CATEGORY]: 0,
+    [URL_TYPES.STORE]: 0,
+    [URL_TYPES.UNKNOWN]: 0,
   };
 
   for (let i = 0; i < urls.length; i++) {
@@ -327,11 +288,11 @@ const validateUnifiedUrls = (urlsText) => {
     urls: validUrls,
     typeCount: urlTypeCount,
     summary: `Found ${validUrls.length} valid URLs: ${
-      urlTypeCount[URL_TYPE.PRODUCT]
-    } products, ${urlTypeCount[URL_TYPE.SEARCH]} searches, ${
-      urlTypeCount[URL_TYPE.CATEGORY]
-    } categories, ${urlTypeCount[URL_TYPE.STORE]} stores, ${
-      urlTypeCount[URL_TYPE.UNKNOWN]
+      urlTypeCount[URL_TYPES.PRODUCT]
+    } products, ${urlTypeCount[URL_TYPES.SEARCH]} searches, ${
+      urlTypeCount[URL_TYPES.CATEGORY]
+    } categories, ${urlTypeCount[URL_TYPES.STORE]} stores, ${
+      urlTypeCount[URL_TYPES.UNKNOWN]
     } other`,
   };
 };
@@ -595,12 +556,14 @@ const processUnifiedUrls = async (urlData) => {
       // Add delay between requests based on URL type
       if (!isComplete) {
         const delay =
-          type === URL_TYPE.SEARCH || type === URL_TYPE.CATEGORY ? 25 : 15;
+          type === URL_TYPES.SEARCH || type === URL_TYPES.CATEGORY
+            ? REQUEST_DELAYS.SEARCH_CATEGORY_DELAY
+            : REQUEST_DELAYS.PRODUCT_DELAY;
         updateProgressPhase(
           'NETWORK_DELAY',
           STATUS_MESSAGES.delayWaiting.replace(
             '{seconds}',
-            (delay / 1000).toFixed(1)
+            (delay / REQUEST_DELAYS.DELAY_CONVERSION_MS).toFixed(1)
           )
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
@@ -609,13 +572,15 @@ const processUnifiedUrls = async (urlData) => {
 
     // Update status for final processing
     updateProgressPhase('PROCESSING_RESULTS', STATUS_MESSAGES.generating);
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) =>
+      setTimeout(resolve, REQUEST_DELAYS.PROCESSING_DELAY)
+    );
 
     // Complete progress and display results
     updateProgressPhase('COMPLETE');
     setTimeout(() => {
       displayResults(results);
-    }, 200);
+    }, REQUEST_DELAYS.DISPLAY_DELAY);
 
     return results;
   } catch (error) {
@@ -635,25 +600,25 @@ const handleApiError = (error, response = null) => {
 
   if (response) {
     switch (response.status) {
-      case 400:
+      case HTTP_STATUS.BAD_REQUEST:
         showStatus(STATUS_MESSAGES.invalidUrl, 'error');
         break;
-      case 408:
+      case HTTP_STATUS.REQUEST_TIMEOUT:
         showStatus(STATUS_MESSAGES.timeout, 'warning');
         break;
-      case 422:
+      case HTTP_STATUS.UNPROCESSABLE_ENTITY:
         showStatus(STATUS_MESSAGES.extractionError, 'error');
         break;
-      case 429:
+      case HTTP_STATUS.TOO_MANY_REQUESTS:
         showStatus(STATUS_MESSAGES.rateLimit, 'warning');
         break;
-      case 500:
+      case HTTP_STATUS.INTERNAL_SERVER_ERROR:
         showStatus(STATUS_MESSAGES.serverError, 'error');
         break;
-      case 502:
+      case HTTP_STATUS.BAD_GATEWAY:
         showStatus(STATUS_MESSAGES.networkError, 'error');
         break;
-      case 503:
+      case HTTP_STATUS.SERVICE_UNAVAILABLE:
         showStatus(STATUS_MESSAGES.serviceUnavailable, 'warning');
         break;
       default:
