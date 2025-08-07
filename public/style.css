@@ -244,6 +244,7 @@ main {
 .status-message {
   padding: 15px;
   border-radius: 8px;
+  margin-top: 15px;
   margin-bottom: 15px;
   min-height: 20px;
   font-weight: 500;
